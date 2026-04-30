@@ -101,6 +101,20 @@ router.post("/roast", async (req, res) => {
   try {
     const profileData = await fetchProfileData(url, type);
     
+    // For non-GitHub profiles, check if it's a guidance message (starts with "Since")
+    if (type !== "github" && profileData.includes("Since")) {
+      // Return guidance message as a special response
+      return res.json({
+        roast: profileData,
+        tips: [
+          "Share the details mentioned above in the input field",
+          "The more info you provide, the spicier the roast",
+          "Be honest for a more accurate roast",
+          "Tips will be generated once we have your profile data"
+        ],
+      });
+    }
+    
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const response = await client.chat.completions.create({
       model: "gpt-4o",
@@ -126,7 +140,7 @@ router.post("/roast", async (req, res) => {
     
     res.json(parsed);
   } catch (e) {
-    console.error("Roast error:", e);
+    console.error("Roast error:", e.message || e);
     res.status(500).json({ error: "Roast failed" });
   }
 });
