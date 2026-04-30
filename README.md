@@ -1,30 +1,75 @@
-# React + Vite
+# Roastify
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A brutally honest career roasting app powered by React + Express + OpenAI.
 
-Currently, two official plugins are available:
+## Project Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Frontend** (root): React + Vite app for the UI
+- **Backend** (roastify-backend/): Express server for API routes
 
 ## Setup
 
-1. Install Node.js 20 or newer.
-2. Install dependencies with `npm install`.
-3. Create a `.env` file in the project root and add your OpenAI key:
+### Prerequisites
+- Node.js 20 or newer
 
+### Frontend Setup
+
+1. In the project root, install dependencies:
 ```bash
-VITE_OPENAI_API_KEY=your_openai_api_key_here
+npm install
 ```
 
-4. Start the app with `npm run dev`.
+2. Optional: create `.env` in the project root if backend is not running on localhost:3001:
+```bash
+VITE_API_BASE_URL=http://localhost:3001
+```
 
-If you are pulling this repo on another machine, use the committed `package-lock.json` with `npm install` to restore the same dependency versions.
+3. Start the frontend dev server:
+```bash
+npm run dev
+```
+
+The app will run on `http://localhost:5173`.
+
+### Backend Setup
+
+1. Navigate to the backend directory:
+```bash
+cd roastify-backend
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Create `.env` file in roastify-backend:
+```bash
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+4. Start the backend dev server:
+```bash
+npm run dev
+```
+
+The API will run on `http://localhost:3001`.
+
+## Running Both Simultaneously
+
+Open two terminal windows:
+- Terminal 1: `npm run dev` (from root, runs frontend on 5173)
+- Terminal 2: `cd roastify-backend && npm run dev` (runs backend on 3001)
+
+## Testing the API
+
+```bash
+curl -X POST http://localhost:3001/api/roast \
+  -H "Content-Type: application/json" \
+  -d '{"input":"my github has 2 repos both called test","type":"github"}'
+```
+
+## Build & Deploy
+
+- Frontend build: `npm run build` (creates dist/)
+- Backend: Deploy roastify-backend separately to Railway or similar platform

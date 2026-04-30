@@ -57,7 +57,7 @@ export default function App() {
       </div>
 
       <footer className="mt-24 text-zinc-700 text-xs">
-        built in one night · powered by gpt-4o · no backend required
+        built in one night · powered by gpt-4o · frontend + backend
       </footer>
     </div>
   );
