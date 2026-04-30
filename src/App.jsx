@@ -1,122 +1,64 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from "react";
+import InputForm from "./components/InputForm";
+import RoastCard from "./components/RoastCard";
+import { getRoast } from "./lib/openai";
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState(null); // { roast, tips }
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit() {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const data = await getRoast(input);
+      setResult(data);
+    } catch (err) {
+      setError(err.message ?? "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center px-4 py-16">
+      {/* Header */}
+      <div className="mb-12 text-center">
+        <h1 className="text-6xl font-black tracking-tight text-orange-500 drop-shadow-[0_0_40px_rgba(249,115,22,0.4)]">
+          Roastify
+        </h1>
+        <p className="mt-3 text-zinc-400 text-lg">
+          Paste your code. Brace for impact.
+        </p>
+      </div>
 
-      <div className="ticks"></div>
+      {/* Card */}
+      <div className="w-full max-w-2xl flex flex-col gap-8">
+        <InputForm
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          loading={loading}
+        />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* Error */}
+        {error && (
+          <div className="rounded-2xl border border-red-500/50 bg-red-950/40 p-4 text-red-400 text-sm">
+            ⚠ {error}
+          </div>
+        )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {/* Result */}
+        {result && <RoastCard roast={result.roast} tips={result.tips} />}
+      </div>
+
+      <footer className="mt-24 text-zinc-700 text-xs">
+        built in one night · powered by gpt-4o · no backend required
+      </footer>
+    </div>
+  );
 }
-
-export default App
