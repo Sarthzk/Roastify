@@ -1,12 +1,12 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
 
-export async function getRoast(input, type = "github") {
+export async function getRoast(url, type = "github") {
   const res = await fetch(`${API_BASE_URL}/api/roast`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ input, type }),
+    body: JSON.stringify({ url, type }),
   });
 
   const payload = await res.json().catch(() => ({}));

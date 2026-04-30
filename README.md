@@ -1,11 +1,18 @@
 # Roastify
 
-A brutally honest career roasting app powered by React + Express + OpenAI.
+A brutally honest profile roasting app powered by React + Express + OpenAI.
+
+## Features
+
+- **GitHub**: Roasts your public GitHub profile using the GitHub API
+- **LinkedIn**: Accepts LinkedIn URLs and guides you to share key details
+- **Instagram**: Takes Instagram URLs with user-provided bio & engagement data
+- **Twitter/X**: Roasts your Twitter/X profile with your tweet style details
 
 ## Project Structure
 
 - **Frontend** (root): React + Vite app for the UI
-- **Backend** (roastify-backend/): Express server for API routes
+- **Backend** (roastify-backend/): Express server for API routes & profile fetching
 
 ## Setup
 
@@ -63,10 +70,27 @@ Open two terminal windows:
 
 ## Testing the API
 
+### GitHub (fully automated)
 ```bash
 curl -X POST http://localhost:3001/api/roast \
   -H "Content-Type: application/json" \
-  -d '{"input":"my github has 2 repos both called test","type":"github"}'
+  -d '{"url":"https://github.com/octocat","type":"github"}'
+```
+
+### LinkedIn (needs user input)
+```bash
+curl -X POST http://localhost:3001/api/roast \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://linkedin.com/in/yourprofile","type":"linkedin"}'
+```
+
+The API will return a prompt requesting profile details (job title, company, connections, etc.).
+
+### Twitter (needs user input)
+```bash
+curl -X POST http://localhost:3001/api/roast \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://twitter.com/yourhandle","type":"twitter"}'
 ```
 
 ## Build & Deploy

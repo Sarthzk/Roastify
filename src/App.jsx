@@ -4,18 +4,19 @@ import RoastCard from "./components/RoastCard";
 import { getRoast } from "./lib/openai";
 
 export default function App() {
-  const [input, setInput] = useState("");
+  const [url, setUrl] = useState("");
+  const [type, setType] = useState("github");
   const [result, setResult] = useState(null); // { roast, tips }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   async function handleSubmit() {
-    if (!input.trim() || loading) return;
+    if (!url.trim() || loading) return;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const data = await getRoast(input);
+      const data = await getRoast(url, type);
       setResult(data);
     } catch (err) {
       setError(err.message ?? "Something went wrong.");
@@ -32,15 +33,17 @@ export default function App() {
           Roastify
         </h1>
         <p className="mt-3 text-zinc-400 text-lg">
-          Paste your code. Brace for impact.
+          Paste a profile URL. Brace for impact.
         </p>
       </div>
 
       {/* Card */}
       <div className="w-full max-w-2xl flex flex-col gap-8">
         <InputForm
-          value={input}
-          onChange={setInput}
+          url={url}
+          onUrlChange={setUrl}
+          type={type}
+          onTypeChange={setType}
           onSubmit={handleSubmit}
           loading={loading}
         />
