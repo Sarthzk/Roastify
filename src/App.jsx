@@ -6,7 +6,7 @@ import { getRoast } from "./lib/openai";
 export default function App() {
   const [url, setUrl] = useState("");
   const [type, setType] = useState("github");
-  const [result, setResult] = useState(null); // { roast, tips }
+  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -26,18 +26,22 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center px-4 py-16">
-      {/* Header */}
+    <div
+      className="min-h-screen flex flex-col items-center px-4 py-16"
+      style={{ backgroundColor: "#000000" }}
+    >
       <div className="mb-12 text-center">
-        <h1 className="text-6xl font-black tracking-tight text-orange-500 drop-shadow-[0_0_40px_rgba(249,115,22,0.4)]">
+        <h1
+          className="text-6xl font-black tracking-tight drop-shadow-lg"
+          style={{ color: "#e2b714" }}
+        >
           Roastify
         </h1>
-        <p className="mt-3 text-zinc-400 text-lg">
+        <p className="mt-3 text-lg" style={{ color: "#646669" }}>
           Paste a profile URL. Brace for impact.
         </p>
       </div>
 
-      {/* Card */}
       <div className="w-full max-w-2xl flex flex-col gap-8">
         <InputForm
           url={url}
@@ -48,18 +52,23 @@ export default function App() {
           loading={loading}
         />
 
-        {/* Error */}
         {error && (
-          <div className="rounded-2xl border border-red-500/50 bg-red-950/40 p-4 text-red-400 text-sm">
+          <div
+            className="rounded-2xl border-2 p-4 text-sm"
+            style={{
+              borderColor: "#e2b714",
+              backgroundColor: "#0d0d0d",
+              color: "#e2b714",
+            }}
+          >
             ⚠ {error}
           </div>
         )}
 
-        {/* Result */}
         {result && <RoastCard roast={result.roast} tips={result.tips} />}
       </div>
 
-      <footer className="mt-24 text-zinc-700 text-xs">
+      <footer className="mt-24 text-xs" style={{ color: "#646669" }}>
         built in one night · powered by gpt-4o · frontend + backend
       </footer>
     </div>
