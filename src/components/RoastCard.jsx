@@ -2,11 +2,24 @@ import { useState } from "react";
 
 export default function RoastCard({ roast, tips }) {
   const [checked, setChecked] = useState([]);
+  const [copied, setCopied] = useState(false);
 
   function toggle(i) {
     setChecked((prev) =>
       prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
     );
+  }
+
+  async function handleShare() {
+    const shareText = `I got roasted by Roastify 🔥
+
+${roast}
+
+get roasted at roastify.vercel.app`;
+
+    await navigator.clipboard.writeText(shareText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -116,6 +129,29 @@ export default function RoastCard({ roast, tips }) {
           </label>
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={handleShare}
+        className="w-full border px-4 py-4 text-sm font-bold uppercase tracking-[0.2em] transition-colors duration-200"
+        style={{
+          borderColor: "#2c2e31",
+          backgroundColor: "transparent",
+          color: copied ? "#e2b714" : "#646669",
+          borderRadius: "2px",
+          fontFamily: "'Courier New', monospace",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = "#e2b714";
+          e.currentTarget.style.color = "#e2b714";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = "#2c2e31";
+          e.currentTarget.style.color = copied ? "#e2b714" : "#646669";
+        }}
+      >
+        {copied ? "copied." : "share roast"}
+      </button>
     </div>
   );
 }

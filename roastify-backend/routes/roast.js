@@ -7,8 +7,85 @@ const prompts = {
   github: `You are a brutal but loving code reviewer. Given a GitHub profile/repository information, roast their projects, code quality, commit history, and repo organization. Be funny but constructive.`,
   linkedin: `You are a brutal but loving career coach. Given LinkedIn profile information, roast their buzzwords, job titles, and professional journey. Be witty but insightful.`,
   instagram: `You are a brutal but loving social media critic. Given Instagram profile information, roast their aesthetic, captions, and follower engagement. Be savage but supportive.`,
-  twitter: `You are a brutal but loving internet personality critic. Given Twitter/X profile information, roast their tweets, engagement, and online persona. Be hilarious but helpful.`,
+  resume: `You are a brutal but loving HR manager. The user pastes their raw resume text. Roast their formatting, skills section, objective statement, and job history gaps. Be savage but give real advice.`,
 };
+
+function extractGithubUsername(input) {
+  const value = String(input || "").trim();
+
+  if (!value) {
+    throw new Error("Missing GitHub username");
+  }
+
+  try {
+    const parsed = new URL(value.startsWith("http") ? value : `https://${value}`);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+
+    if (host !== "github.com") {
+      throw new Error("Invalid GitHub URL");
+    }
+
+    const username = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!username) {
+      throw new Error("Missing GitHub username");
+    }
+
+    return username;
+  } catch {
+    if (/^[a-zA-Z0-9_-]+$/.test(value)) {
+      return value;
+    }
+
+    throw new Error("Invalid GitHub input");
+  }
+}
+
+async function scrapeGithub(input) {
+  const username = extractGithubUsername(input);
+  const userUrl = `https://api.github.com/users/${username}`;
+  const reposUrl = `https://api.github.com/users/${username}/repos?sort=updated&per_page=10`;
+
+  const [userResponse, reposResponse] = await Promise.all([
+    fetch(userUrl),
+    fetch(reposUrl),
+  ]);
+
+  if (!userResponse.ok) {
+    throw new Error("GitHub user not found");
+  }
+
+  if (!reposResponse.ok) {
+    throw new Error("GitHub repositories not found");
+  }
+
+  const [user, repos] = await Promise.all([
+    userResponse.json(),
+    reposResponse.json(),
+  ]);
+
+  const lines = [
+    `GitHub Profile: ${user.name || username}`,
+    `Username: ${username}`,
+    `Bio: ${user.bio || "No bio provided"}`,
+    `Location: ${user.location || "Unknown"}`,
+    `Followers: ${user.followers}`,
+    `Following: ${user.following}`,
+    `Public repos: ${user.public_repos}`,
+    `Account created: ${user.created_at ? new Date(user.created_at).toLocaleDateString() : "Unknown"}`,
+    `Top 10 repositories:`,
+  ];
+
+  const formattedRepos = repos.slice(0, 10).map((repo, index) => {
+    const stars = repo.stargazers_count ?? 0;
+    const forks = repo.forks_count ?? 0;
+    const language = repo.language || "Unknown";
+    const description = repo.description || "No description";
+
+    return `${index + 1}. ${repo.name} | Stars: ${stars} | Forks: ${forks} | Language: ${language} | Description: ${description}`;
+  });
+
+  return [...lines, ...formattedRepos].join("\n");
+}
 
 async function fetchProfileData(url, type) {
   const urlObj = new URL(url);
@@ -64,42 +141,48 @@ Since Instagram profiles require authentication to access, please share:
 - Recent post captions (or description of posts)
 - Account type (personal/business/creator)`;
   }
-  
-  if (type === "twitter") {
-    // Twitter/X - extract username and return message
-    const match = url.match(/twitter\.com\/([a-zA-Z0-9_]+)|x\.com\/([a-zA-Z0-9_]+)/i);
-    if (!match) throw new Error("Invalid Twitter/X URL. Use https://twitter.com/username or https://x.com/username");
-    
-    const username = match[1] || match[2];
-    return `Twitter/X Profile: ${url}
-To get a spicy roast, please share:
-- Bio
-- Follower count
-- Tweet style (serious/memes/rants/promotions)
-- Most common topics you tweet about
-- Follower engagement level`;
+
+  if (type === "resume") {
+    return `Resume Content:\n${url}`;
   }
   
   throw new Error("Unsupported profile type");
 }
 
 router.post("/roast", async (req, res) => {
-  const { url, type } = req.body;
-  if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
-  if (!prompts[type]) return res.status(400).json({ error: "Invalid profile type (github, linkedin, instagram, twitter)" });
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "Server misconfigured: missing OPENAI_API_KEY" });
+  const { input, url, type } = req.body;
+  const profileInput = input || url;
+  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+
+  if (!profileInput || !type) return res.status(400).json({ error: "Missing input or type" });
+  if (!prompts[type]) return res.status(400).json({ error: "Invalid profile type (github, linkedin, instagram, resume)" });
+  if (!apiKey) {
+    return res.status(500).json({ error: "Server misconfigured: missing API key" });
   }
 
   try {
     // Validate URL format
-    new URL(url);
+    if (type !== "resume") {
+      new URL(profileInput);
+    }
   } catch {
-    return res.status(400).json({ error: "Invalid URL format" });
+    if (type !== "github" && type !== "resume") {
+      return res.status(400).json({ error: "Invalid URL format" });
+    }
   }
 
   try {
-    const profileData = await fetchProfileData(url, type);
+    let profileData;
+
+    if (type === "github") {
+      try {
+        profileData = await scrapeGithub(profileInput);
+      } catch {
+        profileData = `could not fetch profile, user provided: ${profileInput}`;
+      }
+    } else {
+      profileData = await fetchProfileData(profileInput, type);
+    }
     
     // For non-GitHub profiles, check if it's a guidance message (starts with "Since")
     if (type !== "github" && profileData.includes("Since")) {
@@ -115,9 +198,10 @@ router.post("/roast", async (req, res) => {
       });
     }
     
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = new OpenAI({ apiKey });
     const response = await client.chat.completions.create({
       model: "gpt-4o",
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -132,6 +216,9 @@ router.post("/roast", async (req, res) => {
     });
     
     const responseText = response.choices[0].message.content;
+    if (!responseText) {
+      throw new Error("Empty OpenAI response");
+    }
     const parsed = JSON.parse(responseText);
     
     if (!parsed.roast || !Array.isArray(parsed.tips)) {
@@ -141,7 +228,7 @@ router.post("/roast", async (req, res) => {
     res.json(parsed);
   } catch (e) {
     console.error("Roast error:", e.message || e);
-    res.status(500).json({ error: "Roast failed" });
+    res.status(500).json({ error: e.message || "Roast failed" });
   }
 });
 
