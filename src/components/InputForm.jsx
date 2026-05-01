@@ -1,9 +1,9 @@
 export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubmit, loading }) {
   const profileTypes = [
-    { value: "github", label: "🐙 GitHub" },
-    { value: "linkedin", label: "💼 LinkedIn" },
-    { value: "instagram", label: "📸 Instagram" },
-    { value: "twitter", label: "𝕏 Twitter" },
+    { value: "github", label: "01 github" },
+    { value: "linkedin", label: "02 linkedin" },
+    { value: "instagram", label: "03 instagram" },
+    { value: "twitter", label: "04 twitter" },
   ];
 
   function handleKey(e) {
@@ -11,68 +11,89 @@ export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubm
   }
 
   return (
-    <div className="w-full flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-semibold" style={{ color: "#d1d0c5" }}>
+    <div className="w-full flex flex-col gap-8">
+      <div className="flex flex-col gap-3">
+        <label
+          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+          style={{ color: "#646669" }}
+        >
           Profile Type
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          {profileTypes.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => onTypeChange(value)}
-              disabled={loading}
-              style={{
-                backgroundColor: type === value ? "#e2b714" : "#111111",
-                color: type === value ? "#000000" : "#d1d0c5",
-                borderColor: type === value ? "#e2b714" : "#2c2e31",
-                borderWidth: "2px",
-                opacity: loading ? 0.5 : 1,
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-              className="py-3 px-4 rounded-lg font-medium transition-all duration-200 text-sm"
-              onMouseEnter={(e) => {
-                if (type !== value && !loading) {
-                  e.target.style.borderColor = "#646669";
-                  e.target.style.backgroundColor = "#0d0d0d";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (type !== value && !loading) {
-                  e.target.style.borderColor = "#2c2e31";
-                  e.target.style.backgroundColor = "#111111";
-                }
-              }}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {profileTypes.map(({ value, label }) => {
+            const selected = type === value;
+
+            return (
+              <button
+                key={value}
+                onClick={() => onTypeChange(value)}
+                disabled={loading}
+                style={{
+                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
+                  color: selected ? "#e2b714" : "#646669",
+                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  borderWidth: "1px",
+                  borderLeftWidth: "2px",
+                  opacity: loading ? 0.5 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  borderRadius: "2px",
+                  fontFamily: "'Courier New', monospace",
+                }}
+                className="flex min-h-16 items-center px-4 py-4 text-left text-sm uppercase tracking-[0.2em] transition-colors duration-200"
+                onMouseEnter={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#1a1a1a";
+                    e.currentTarget.style.borderLeftColor = "#e2b714";
+                    e.currentTarget.style.color = "#e2b714";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#0e0e0e";
+                    e.currentTarget.style.borderLeftColor = "#2c2e31";
+                    e.currentTarget.style.color = "#646669";
+                  }
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-semibold" style={{ color: "#d1d0c5" }}>
+      <div className="flex flex-col gap-3">
+        <label
+          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+          style={{ color: "#646669" }}
+        >
           Profile URL
         </label>
         <input
           type="url"
           style={{
-            backgroundColor: "#111111",
+            backgroundColor: "#000000",
             borderColor: "#2c2e31",
+            borderBottomColor: "#2c2e31",
+            borderLeftWidth: 0,
+            borderRightWidth: 0,
+            borderTopWidth: 0,
+            borderBottomWidth: "1px",
             color: "#d1d0c5",
             fontFamily: "'Courier New', monospace",
+            borderRadius: "0px",
           }}
-          className="w-full rounded-lg border-2 p-4 text-sm focus:outline-none transition-colors duration-200"
+          className="w-full px-0 py-5 text-sm focus:outline-none focus:shadow-none transition-colors duration-200"
           placeholder={`https://github.com/username${type === "linkedin" ? " or https://linkedin.com/in/name" : type === "instagram" ? " or https://instagram.com/username" : type === "twitter" ? " or https://twitter.com/username" : ""}`}
           value={url}
           onChange={(e) => onUrlChange(e.target.value)}
           onKeyDown={handleKey}
           disabled={loading}
           onFocus={(e) => {
-            e.target.style.borderColor = "#646669";
+            e.target.style.borderBottomColor = "#e2b714";
           }}
           onBlur={(e) => {
-            e.target.style.borderColor = "#2c2e31";
+            e.target.style.borderBottomColor = "#2c2e31";
           }}
         />
         <style>{`
@@ -91,37 +112,44 @@ export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubm
           opacity: loading || !url.trim() ? 0.5 : 1,
           cursor: loading || !url.trim() ? "not-allowed" : "pointer",
           fontFamily: "'Courier New', monospace",
+          borderRadius: "2px",
         }}
-        className="w-full py-4 rounded-lg font-bold text-lg tracking-wide transition-all duration-200 active:scale-95"
+        className="w-full py-4 font-bold text-sm uppercase tracking-[0.15em] transition-all duration-200 active:scale-[0.99]"
         onMouseEnter={(e) => {
           if (!loading && url.trim()) {
-            e.target.style.backgroundColor = "#f0d66f";
+            e.currentTarget.style.backgroundColor = "#f0c832";
+            e.currentTarget.style.filter = "brightness(1.03)";
           }
         }}
         onMouseLeave={(e) => {
           if (!loading && url.trim()) {
             e.target.style.backgroundColor = "#e2b714";
+            e.currentTarget.style.filter = "brightness(1)";
           }
         }}
       >
         {loading ? (
-          <span className="flex items-center justify-center gap-2">
+          <span className="flex items-center justify-center gap-3">
             <span
-              className="inline-block w-4 h-4 rounded-full animate-spin"
+              className="inline-block w-4 h-4 animate-spin"
               style={{
-                borderWidth: "2px",
+                borderWidth: "1px",
                 borderColor: "#646669",
                 borderTopColor: "#d1d0c5",
+                borderRadius: "2px",
               }}
             />
-            Roasting profile…
+            roasting profile
           </span>
         ) : (
-          "🔥 Roast This Profile"
+          "roast this profile"
         )}
       </button>
-      <p className="text-center text-xs" style={{ color: "#646669" }}>
-        ⌘+Enter to submit
+      <p
+        className="text-center text-[10px] uppercase tracking-[0.18em]"
+        style={{ color: "#646669" }}
+      >
+        cmd + enter to submit
       </p>
     </div>
   );

@@ -27,22 +27,36 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center px-4 py-16"
+      className="min-h-screen flex flex-col items-center px-4 py-20"
       style={{ backgroundColor: "#000000" }}
     >
-      <div className="mb-12 text-center">
-        <h1
-          className="text-6xl font-black tracking-tight drop-shadow-lg"
-          style={{ color: "#e2b714" }}
+      <div className="w-full max-w-3xl mb-14 flex flex-col items-start gap-3">
+        <div
+          className="pl-4"
+          style={{
+            borderLeft: "2px solid #e2b714",
+          }}
         >
-          Roastify
-        </h1>
-        <p className="mt-3 text-lg" style={{ color: "#646669" }}>
-          Paste a profile URL. Brace for impact.
+          <h1
+            className="text-5xl font-black tracking-[-0.08em] uppercase leading-none"
+            style={{ color: "#e2b714" }}
+          >
+            Roastify
+          </h1>
+          <div
+            className="mt-3 h-px w-24"
+            style={{ backgroundColor: "#e2b714" }}
+          />
+        </div>
+        <p
+          className="text-sm sm:text-base tracking-[0.02em]"
+          style={{ color: "#646669" }}
+        >
+          Paste a profile URL and let the machine do the judging.
         </p>
       </div>
 
-      <div className="w-full max-w-2xl flex flex-col gap-8">
+      <div className="w-full max-w-3xl flex flex-col gap-10">
         <InputForm
           url={url}
           onUrlChange={setUrl}
@@ -54,21 +68,25 @@ export default function App() {
 
         {error && (
           <div
-            className="rounded-2xl border-2 p-4 text-sm"
+            className="border p-4 text-sm"
             style={{
               borderColor: "#e2b714",
               backgroundColor: "#0d0d0d",
               color: "#e2b714",
+              borderRadius: "2px",
             }}
           >
-            ⚠ {error}
+            {error}
           </div>
         )}
 
         {result && <RoastCard roast={result.roast} tips={result.tips} />}
       </div>
 
-      <footer className="mt-24 text-xs" style={{ color: "#646669" }}>
+      <footer
+        className="mt-24 text-[10px] uppercase tracking-[0.18em]"
+        style={{ color: "#646669" }}
+      >
         built in one night · powered by gpt-4o · frontend + backend
       </footer>
     </div>
