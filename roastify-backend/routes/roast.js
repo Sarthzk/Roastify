@@ -150,9 +150,17 @@ Since Instagram profiles require authentication to access, please share:
 }
 
 router.post("/roast", async (req, res) => {
-  const { input, url, type } = req.body;
+  const { input, url, type, severity } = req.body;
   const profileInput = input || url;
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+  const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity)
+    ? severity
+    : "medium";
+  const severityInstructions = {
+    mild: "Keep it light and friendly, more funny than harsh.",
+    medium: "Balance funny with savage. Make it sting a little.",
+    "destroy me": "Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
+  };
 
   if (!profileInput || !type) return res.status(400).json({ error: "Missing input or type" });
   if (!prompts[type]) return res.status(400).json({ error: "Invalid profile type (github, linkedin, instagram, resume)" });
@@ -205,7 +213,7 @@ router.post("/roast", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `${prompts[type]} Respond ONLY in this JSON format with no markdown:
+          content: `${prompts[type]} ${severityInstructions[selectedSeverity]} Respond ONLY in this JSON format with no markdown:
 {
   "roast": "3-5 sentence funny savage but kind roast",
   "tips": ["tip1","tip2","tip3","tip4","tip5"]

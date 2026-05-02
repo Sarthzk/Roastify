@@ -4,7 +4,16 @@ import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubmit, loading }) {
+export default function InputForm({
+  url,
+  onUrlChange,
+  type,
+  onTypeChange,
+  severity,
+  onSeverityChange,
+  onSubmit,
+  loading,
+}) {
   const [resumeText, setResumeText] = useState(url);
   const [resumeStatus, setResumeStatus] = useState("");
 
@@ -14,6 +23,8 @@ export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubm
     { value: "instagram", label: "03 instagram" },
     { value: "resume", label: "04 resume" },
   ];
+
+  const severities = ["mild", "medium", "destroy me"];
 
   function handleKey(e) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit();
@@ -260,6 +271,58 @@ export default function InputForm({ url, onUrlChange, type, onTypeChange, onSubm
           "roast this profile"
         )}
       </button>
+
+      <div className="flex flex-col gap-3">
+        <label
+          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+          style={{ color: "#646669" }}
+        >
+          Severity
+        </label>
+        <div className="grid grid-cols-3 gap-3">
+          {severities.map((value) => {
+            const selected = severity === value;
+
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onSeverityChange(value)}
+                disabled={loading}
+                style={{
+                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
+                  color: selected ? "#e2b714" : "#646669",
+                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  borderWidth: "1px",
+                  borderLeftWidth: "2px",
+                  opacity: loading ? 0.5 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  borderRadius: "2px",
+                  fontFamily: "'Courier New', monospace",
+                }}
+                className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
+                onMouseEnter={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#1a1a1a";
+                    e.currentTarget.style.borderLeftColor = "#e2b714";
+                    e.currentTarget.style.color = "#e2b714";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#0e0e0e";
+                    e.currentTarget.style.borderLeftColor = "#2c2e31";
+                    e.currentTarget.style.color = "#646669";
+                  }
+                }}
+              >
+                {value}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <p
         className="text-center text-[10px] uppercase tracking-[0.18em]"
         style={{ color: "#646669" }}

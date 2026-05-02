@@ -42,7 +42,15 @@ async function scrapeGithub(url) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { url, type } = req.body;
+  const { url, type, severity } = req.body;
+  const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity)
+    ? severity
+    : "medium";
+  const severityInstructions = {
+    mild: "Keep it light and friendly, more funny than harsh.",
+    medium: "Balance funny with savage. Make it sting a little.",
+    "destroy me": "Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
+  };
   if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
   if (!apiKey) return res.status(500).json({ error: "Server misconfigured: missing API key" });
 
@@ -55,7 +63,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: `${prompts[type]} Respond ONLY as JSON, no markdown:
+          content: `${prompts[type]} ${severityInstructions[selectedSeverity]} Respond ONLY as JSON, no markdown:
 {"roast": "3-5 sentence savage but kind roast", "tips": ["tip1","tip2","tip3","tip4","tip5"]}`,
         },
         { role: "user", content: profileData },

@@ -6,6 +6,7 @@ import { getRoast } from "./lib/openai";
 export default function App() {
   const [url, setUrl] = useState("");
   const [type, setType] = useState("github");
+  const [severity, setSeverity] = useState("medium");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -16,7 +17,7 @@ export default function App() {
     setError(null);
     setResult(null);
     try {
-      const data = await getRoast(url, type);
+      const data = await getRoast(url, type, severity);
       setResult(data);
     } catch (err) {
       setError(err.message ?? "Something went wrong.");
@@ -62,6 +63,8 @@ export default function App() {
           onUrlChange={setUrl}
           type={type}
           onTypeChange={setType}
+          severity={severity}
+          onSeverityChange={setSeverity}
           onSubmit={handleSubmit}
           loading={loading}
         />
