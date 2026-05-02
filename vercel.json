@@ -1,3 +1,8 @@
 {
+  "functions": {
+    "api/roast.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/$1" }]
 }

@@ -208,7 +208,15 @@ export default function InputForm({
               borderRadius: "0px",
             }}
             className="w-full px-0 py-5 text-sm focus:outline-none focus:shadow-none transition-colors duration-200"
-            placeholder={`https://github.com/username${type === "linkedin" ? " or https://linkedin.com/in/name" : type === "instagram" ? " or https://instagram.com/username" : ""}`}
+            placeholder={
+              type === "github"
+                ? "https://github.com/username"
+                : type === "linkedin"
+                ? "https://linkedin.com/in/name"
+                : type === "instagram"
+                ? "https://instagram.com/username"
+                : "https://github.com/username"
+            }
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             onKeyDown={handleKey}

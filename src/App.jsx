@@ -90,7 +90,7 @@ export default function App() {
         className="mt-24 text-[10px] uppercase tracking-[0.18em]"
         style={{ color: "#646669" }}
       >
-        developed by Kavyaansh Kundu, Fravash Dhruv & Sarthak Mohite · powered by gpt-4o · roasting with 🔥
+        developed by Kavyaansh Kundu, Fravash Dhruv & Sarthak Mohite · powered by gpt-4o 
       </footer>
     </div>
   );
