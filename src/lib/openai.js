@@ -1,20 +1,27 @@
 import OpenAI from 'openai';
 
-// This pulls the key from your .env file
 const openai = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true // Required since we have no backend
+  dangerouslyAllowBrowser: true 
 });
 
 export async function getRoast(url, type) {
-  // 1. Define the personality
-  const systemPrompt = `You are a savage, high-standard tech recruiter. 
-  Roast this ${type} profile brutally: ${url}. 
-  Focus on bad bios, mid projects, and cringe headers.
-  Provide 5 actionable, serious tips to fix it.
-  Return ONLY JSON: { "roast": "string", "tips": ["string"] }`;
+  const systemPrompt = `
+    You are Ricky Gervais roasting a ${type} profile at the Golden Globes.
+    
+    TONE & STYLE (The Roast):
+    - Dry, nihilistic, and brutally honest. 
+    - Use phrases like "I don't care," "Truly pathetic," and "We're all going to die anyway, why did you spend time on this?"
+    - Attack the vanity of the profile. If it's LinkedIn, roast the "professional" facade. If it's GitHub, roast the "contribution graph" as a cry for help.
+    
+    TONE & STYLE (The Tips):
+    - Provide 5-7 actionable survival tips.
+    - Use 5-10% Hinglish words to keep it grounded (e.g., 'Bhai', 'Jugaad', 'Scene', 'Bas').
+    - Example: "Fix your bio, bhai, it looks like a spam bot wrote it."
+    
+    Return ONLY JSON: { "roast": "string", "tips": ["string"] }
+  `;
 
-  // 2. Execute the call
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -24,6 +31,5 @@ export async function getRoast(url, type) {
     response_format: { type: "json_object" }
   });
 
-  // 3. Parse and return to App.jsx
   return JSON.parse(response.choices[0].message.content);
 }
