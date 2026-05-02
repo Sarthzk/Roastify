@@ -1,7 +1,30 @@
 import OpenAI from "openai";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
 const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 const client = new OpenAI({ apiKey });
+
+// Initialize Upstash rate limiter
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(5, "1 h"), // 5 requests per hour
+  analytics: true,
+});
+
+function getClientIP(req) {
+  // Try to get the real client IP from various headers
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+}
 
 function extractGithubUsername(input) {
   const value = String(input || "").trim();
@@ -169,6 +192,19 @@ export default async function handler(req, res) {
 
   if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
   if (!apiKey) return res.status(500).json({ error: "Server misconfigured: missing API key" });
+
+  // Rate limiting check
+  const ip = getClientIP(req);
+  try {
+    const { success } = await ratelimit.limit(ip);
+    if (!success) {
+      return res.status(429).json({ error: "Too many requests. Try again later." });
+    }
+  } catch (rateLimitError) {
+    console.error("Rate limiting error:", rateLimitError);
+    // Continue without rate limiting if Upstash is down (fail open)
+    // But you may want to throw an error instead for stricter enforcement
+  }
 
   const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity) ? severity : "medium";
 

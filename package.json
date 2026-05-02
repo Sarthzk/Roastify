@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
     "openai": "^6.35.0",
