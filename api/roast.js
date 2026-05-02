@@ -3,12 +3,151 @@ import OpenAI from "openai";
 const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 const client = new OpenAI({ apiKey });
 
-const prompts = {
-  github: `You are a brutal but loving code reviewer roasting someone's GitHub profile.`,
-  linkedin: `You are a brutal but loving career coach roasting someone's LinkedIn profile.`,
-  instagram: `You are a brutal but loving social media critic roasting someone's Instagram.`,
-  resume: `You are a brutal but loving HR manager roasting someone's resume.`,
-};
+function extractGithubUsername(input) {
+  const value = String(input || "").trim();
+
+  if (!value) {
+    throw new Error("Missing GitHub username");
+  }
+
+  try {
+    const parsed = new URL(value.startsWith("http") ? value : `https://${value}`);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+
+    if (host !== "github.com") {
+      throw new Error("Invalid GitHub URL");
+    }
+
+    const username = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!username) {
+      throw new Error("Missing GitHub username");
+    }
+
+    return username;
+  } catch {
+    if (/^[a-zA-Z0-9_-]+$/.test(value)) {
+      return value;
+    }
+
+    throw new Error("Invalid GitHub input");
+  }
+}
+
+async function scrapeGithub(input) {
+  const username = extractGithubUsername(input);
+  const userUrl = `https://api.github.com/users/${username}`;
+  const reposUrl = `https://api.github.com/users/${username}/repos?sort=updated&per_page=10`;
+
+  const [userResponse, reposResponse] = await Promise.all([
+    fetch(userUrl),
+    fetch(reposUrl),
+  ]);
+
+  if (!userResponse.ok) {
+    throw new Error("GitHub user not found");
+  }
+
+  if (!reposResponse.ok) {
+    throw new Error("GitHub repositories not found");
+  }
+
+  const [user, repos] = await Promise.all([
+    userResponse.json(),
+    reposResponse.json(),
+  ]);
+
+  const lines = [
+    `GitHub Profile: ${user.name || username}`,
+    `Username: ${username}`,
+    `Bio: ${user.bio || "No bio provided"}`,
+    `Location: ${user.location || "Unknown"}`,
+    `Followers: ${user.followers}`,
+    `Following: ${user.following}`,
+    `Public repos: ${user.public_repos}`,
+    `Account created: ${user.created_at ? new Date(user.created_at).toLocaleDateString() : "Unknown"}`,
+    `Top 10 repositories:`,
+  ];
+
+  const formattedRepos = repos.slice(0, 10).map((repo, index) => {
+    const stars = repo.stargazers_count ?? 0;
+    const forks = repo.forks_count ?? 0;
+    const language = repo.language || "Unknown";
+    const description = repo.description || "No description";
+
+    return `${index + 1}. ${repo.name} | Stars: ${stars} | Forks: ${forks} | Language: ${language} | Description: ${description}`;
+  });
+
+  return [...lines, ...formattedRepos].join("\n");
+}
+
+function getSystemPrompt(type, severity) {
+  const severityInstructions = {
+    mild: "Keep it light and friendly, more funny than harsh.",
+    medium: "Balance funny with savage. Make it sting a little.",
+    "destroy me": "Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
+  };
+
+  const basePrompts = {
+    github: `You are Ricky Gervais roasting a GitHub profile at the Golden Globes.
+${severityInstructions[severity]}
+
+TONE & STYLE (The Roast):
+- Dry, nihilistic, and brutally honest.
+- Use phrases like "I don't care," "Truly pathetic," and "We're all going to die anyway, why did you spend time on this?"
+- Attack the vanity of the profile. Roast the "contribution graph" as a cry for help.
+
+TONE & STYLE (The Tips):
+- Provide 5-7 actionable survival tips.
+- Use 5-10% Hinglish words to keep it grounded (e.g., 'Bhai', 'Jugaad', 'Scene', 'Bas').
+- Example: "Fix your bio, bhai, it looks like a spam bot wrote it."
+
+Return ONLY JSON: { "roast": "string", "tips": ["string"] }`,
+
+    linkedin: `You are Ricky Gervais roasting a LinkedIn profile at the Golden Globes.
+${severityInstructions[severity]}
+
+TONE & STYLE (The Roast):
+- Dry, nihilistic, and brutally honest.
+- Attack the vanity and buzzwords in the profile. Roast the "professional" facade.
+- Use phrases like "I don't care," "Truly pathetic," and "We're all going to die anyway."
+
+TONE & STYLE (The Tips):
+- Provide 5-7 actionable survival tips.
+- Use 5-10% Hinglish words to keep it grounded (e.g., 'Bhai', 'Jugaad', 'Scene', 'Bas').
+
+Return ONLY JSON: { "roast": "string", "tips": ["string"] }`,
+
+    instagram: `You are Ricky Gervais roasting an Instagram profile at the Golden Globes.
+${severityInstructions[severity]}
+
+TONE & STYLE (The Roast):
+- Dry, nihilistic, and brutally honest.
+- Attack the vanity and aesthetic of the profile.
+- Use phrases like "I don't care," "Truly pathetic," and "We're all going to die anyway."
+
+TONE & STYLE (The Tips):
+- Provide 5-7 actionable survival tips.
+- Use 5-10% Hinglish words to keep it grounded (e.g., 'Bhai', 'Jugaad', 'Scene', 'Bas').
+
+Return ONLY JSON: { "roast": "string", "tips": ["string"] }`,
+
+    resume: `You are Ricky Gervais roasting a resume at the Golden Globes.
+${severityInstructions[severity]}
+
+TONE & STYLE (The Roast):
+- Dry, nihilistic, and brutally honest.
+- Roast the formatting, structure, buzzwords, and content gaps.
+- Be savage but constructive.
+
+TONE & STYLE (The Tips):
+- Provide 5-7 actionable survival tips.
+- Use 5-10% Hinglish words to keep it grounded (e.g., 'Bhai', 'Jugaad', 'Scene', 'Bas').
+
+Return ONLY JSON: { "roast": "string", "tips": ["string"] }`,
+  };
+
+  return basePrompts[type] || basePrompts.github;
+}
 
 function defaultResumeResponse() {
   return {
@@ -23,39 +162,23 @@ function defaultResumeResponse() {
   };
 }
 
-async function scrapeGithub(url) {
-  const match = url.match(/github\.com\/([a-zA-Z0-9_-]+)/i) || [null, url.trim()];
-  const username = match[1];
-  const [userRes, repoRes] = await Promise.all([
-    fetch(`https://api.github.com/users/${username}`),
-    fetch(`https://api.github.com/users/${username}/repos?sort=updated&per_page=10`),
-  ]);
-  const user = await userRes.json();
-  const repos = await repoRes.json();
-  return `
-    Name: ${user.name}, Bio: ${user.bio}, Followers: ${user.followers},
-    Public repos: ${user.public_repos}, Company: ${user.company}
-    Top repos: ${repos.map(r => `${r.name} (${r.stargazers_count} stars, ${r.language})`).join(", ")}
-  `;
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { url, type, severity } = req.body;
-  const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity)
-    ? severity
-    : "medium";
-  const severityInstructions = {
-    mild: "Keep it light and friendly, more funny than harsh.",
-    medium: "Balance funny with savage. Make it sting a little.",
-    "destroy me": "Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
-  };
+  const { url, type, severity = "medium" } = req.body;
+
   if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
   if (!apiKey) return res.status(500).json({ error: "Server misconfigured: missing API key" });
 
+  const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity) ? severity : "medium";
+
   try {
-    const profileData = type === "github" ? await scrapeGithub(url) : url;
+    let profileData = url;
+
+    // Scrape GitHub if it's a GitHub profile
+    if (type === "github") {
+      profileData = await scrapeGithub(url);
+    }
 
     const response = await client.chat.completions.create({
       model: "gpt-4o",
@@ -63,8 +186,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: `${prompts[type]} ${severityInstructions[selectedSeverity]} Respond ONLY as JSON, no markdown:
-{"roast": "3-5 sentence savage but kind roast", "tips": ["tip1","tip2","tip3","tip4","tip5"]}`,
+          content: getSystemPrompt(type, selectedSeverity),
         },
         { role: "user", content: profileData },
       ],
@@ -75,20 +197,12 @@ export default async function handler(req, res) {
       throw new Error("Empty OpenAI response");
     }
 
-    try {
-      const parsed = JSON.parse(content);
-      if (!parsed.roast || !Array.isArray(parsed.tips)) {
-        throw new Error("Invalid response format");
-      }
-
-      res.json(parsed);
-    } catch (parseError) {
-      if (type === "resume") {
-        return res.json(defaultResumeResponse());
-      }
-
-      throw parseError;
+    const parsed = JSON.parse(content);
+    if (!parsed.roast || !Array.isArray(parsed.tips)) {
+      throw new Error("Invalid response format");
     }
+
+    res.json(parsed);
   } catch (e) {
     console.error(e);
     if (type === "resume") {
