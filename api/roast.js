@@ -5,18 +5,6 @@ import { Redis } from "@upstash/redis";
 const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 const client = new OpenAI({ apiKey });
 
-// Initialize Upstash rate limiter
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
-
-const ratelimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(5, "1 h"), // 5 requests per hour
-  analytics: true,
-});
-
 function getClientIP(req) {
   // Try to get the real client IP from various headers
   const forwarded = req.headers["x-forwarded-for"];
@@ -193,17 +181,29 @@ export default async function handler(req, res) {
   if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
   if (!apiKey) return res.status(500).json({ error: "Server misconfigured: missing API key" });
 
-  // Rate limiting check
+  // Debug environment variables
+  console.log("REDIS URL set:", !!process.env.UPSTASH_REDIS_REST_URL);
+  console.log("REDIS TOKEN set:", !!process.env.UPSTASH_REDIS_REST_TOKEN);
+  console.log("OPENAI KEY set:", !!process.env.OPENAI_API_KEY);
+
+  // Rate limiting check (moved inside handler to prevent cold-start crashes)
   const ip = getClientIP(req);
   try {
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    const ratelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(5, "1 h"),
+    });
     const { success } = await ratelimit.limit(ip);
     if (!success) {
       return res.status(429).json({ error: "Too many requests. Try again later." });
     }
   } catch (rateLimitError) {
-    console.error("Rate limiting error:", rateLimitError);
-    // Continue without rate limiting if Upstash is down (fail open)
-    // But you may want to throw an error instead for stricter enforcement
+    console.error("Rate limit init failed:", rateLimitError.message);
+    // Fail open — continue without rate limiting if Upstash is unavailable
   }
 
   const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity) ? severity : "medium";
