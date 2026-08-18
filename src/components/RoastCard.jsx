@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
-export default function RoastCard({ roast, tips }) {
+export default function RoastCard({ roast, tips, modelUsed }) {
   const [checked, setChecked] = useState([]);
+  const [hoveredTip, setHoveredTip] = useState(null);
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const cardRef = useRef();
@@ -19,6 +20,16 @@ export default function RoastCard({ roast, tips }) {
 ${roast}
 
 get roasted at roastify.vercel.app`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: shareText });
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        // fall through to clipboard copy if native share fails for any other reason
+      }
+    }
 
     await navigator.clipboard.writeText(shareText);
     setCopied(true);
@@ -66,6 +77,7 @@ get roasted at roastify.vercel.app`;
               style={{ backgroundColor: "#e2b714", borderRadius: "2px" }}
             />
             roast output
+            {modelUsed && <span style={{ color: "#3a3d41" }}>· {modelUsed}</span>}
           </div>
           <div
             className="border-l-2 pl-4"
@@ -101,42 +113,42 @@ get roasted at roastify.vercel.app`;
             <label
               key={i}
               className="flex items-start gap-4 cursor-pointer group py-1"
-              onClick={() => toggle(i)}
             >
-              <span
-                className="mt-0.5 shrink-0 w-4 h-4 border flex items-center justify-center transition-colors duration-150"
-                style={{
-                  backgroundColor: checked.includes(i) ? "#e2b714" : "transparent",
-                  borderColor: checked.includes(i) ? "#e2b714" : "#646669",
-                  borderRadius: "2px",
-                }}
-                onMouseEnter={(e) => {
-                  if (!checked.includes(i)) {
-                    e.currentTarget.style.borderColor = "#e2b714";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!checked.includes(i)) {
-                    e.currentTarget.style.borderColor = "#646669";
-                  }
-                }}
-              >
-                {checked.includes(i) && (
-                  <svg
-                    className="w-2.5 h-2.5"
-                    fill="none"
-                    viewBox="0 0 12 12"
-                    style={{ color: "#000000" }}
-                  >
-                    <path
-                      d="M2 6l3 3 5-5"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
+              <span className="relative mt-0.5 shrink-0 w-4 h-4">
+                <input
+                  type="checkbox"
+                  checked={checked.includes(i)}
+                  onChange={() => toggle(i)}
+                  onMouseEnter={() => setHoveredTip(i)}
+                  onMouseLeave={() => setHoveredTip((prev) => (prev === i ? null : prev))}
+                  className="absolute inset-0 w-4 h-4 cursor-pointer opacity-0"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none flex w-4 h-4 items-center justify-center border transition-colors duration-150"
+                  style={{
+                    backgroundColor: checked.includes(i) ? "#e2b714" : "transparent",
+                    borderColor: checked.includes(i) || hoveredTip === i ? "#e2b714" : "#646669",
+                    borderRadius: "2px",
+                  }}
+                >
+                  {checked.includes(i) && (
+                    <svg
+                      className="w-2.5 h-2.5"
+                      fill="none"
+                      viewBox="0 0 12 12"
+                      style={{ color: "#000000" }}
+                    >
+                      <path
+                        d="M2 6l3 3 5-5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </span>
               </span>
               <span
                 className="text-sm leading-7 transition-colors duration-150"

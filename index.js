@@ -1,6 +1,12 @@
 import http from "node:http";
 import { readFileSync } from "node:fs";
 
+function stripQuotes(value) {
+  const isQuoted =
+    (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
+  return isQuoted ? value.slice(1, -1) : value;
+}
+
 function loadEnvFile(path) {
   try {
     const contents = readFileSync(path, "utf8");
@@ -12,7 +18,7 @@ function loadEnvFile(path) {
 
       const separatorIndex = trimmed.indexOf("=");
       const key = trimmed.slice(0, separatorIndex).trim();
-      const value = trimmed.slice(separatorIndex + 1).trim();
+      const value = stripQuotes(trimmed.slice(separatorIndex + 1).trim());
 
       if (key && process.env[key] == null) {
         process.env[key] = value;
@@ -26,8 +32,17 @@ function loadEnvFile(path) {
 loadEnvFile("./.env");
 
 const { default: roastHandler } = await import("./api/roast.js");
+const { default: rateLimitStatusHandler } = await import("./api/rate-limit-status.js");
 
 const port = 3001;
+
+// Matched by path only — like real Vercel serverless functions, each handler receives
+// every HTTP method for its route and decides for itself what to allow (see the
+// `req.method !== "POST"` / `"GET"` checks and CORS preflight handling in each handler).
+const routes = [
+  { path: "/api/roast", handler: roastHandler },
+  { path: "/api/rate-limit-status", handler: rateLimitStatusHandler },
+];
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -36,7 +51,9 @@ function sendJson(res, statusCode, payload) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method !== "POST" || req.url !== "/api/roast") {
+  const path = req.url.split("?")[0];
+  const route = routes.find((r) => r.path === path);
+  if (!route) {
     return sendJson(res, 404, { error: "Not found" });
   }
 
@@ -60,7 +77,7 @@ const server = http.createServer(async (req, res) => {
     res.json = (payload) => sendJson(res, res.statusCode || 200, payload);
 
     try {
-      await roastHandler(req, res);
+      await route.handler(req, res);
     } catch (error) {
       console.error("Server error:", error);
       if (!res.headersSent) {

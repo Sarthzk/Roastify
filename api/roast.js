@@ -1,20 +1,46 @@
 import OpenAI from "openai";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import { getClientIP, createRatelimit } from "./_lib/rateLimit.js";
+import { withScrapeCache } from "./_lib/scrapeCache.js";
+import { fetchWithRetry } from "./_lib/fetchWithRetry.js";
+import { handleCorsPreflight } from "./_lib/cors.js";
 
-const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-const client = new OpenAI({ apiKey });
+const openaiApiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+const openrouterApiKey = process.env.OPENROUTER_API_KEY;
 
-function getClientIP(req) {
-  // Try to get the real client IP from various headers
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
-  }
-  return req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+// Selectable models — the user picks one in the UI before requesting a roast. GPT-4o
+// stays available alongside the open-weight candidates for development/testing, per
+// ROASTIFY_TASKS.md section 4 (evaluate before cutting over, don't swap blind).
+export const MODEL_OPTIONS = {
+  "gpt-4o": { label: "GPT-4o", provider: "openai", model: "gpt-4o" },
+  "command-a": { label: "Command A", provider: "openrouter", model: "cohere/command-a" },
+  "command-r": { label: "Command R", provider: "openrouter", model: "cohere/command-r" },
+};
+export const DEFAULT_MODEL_KEY = "gpt-4o";
+
+export function resolveModelOption(modelKey) {
+  return MODEL_OPTIONS[modelKey] || MODEL_OPTIONS[DEFAULT_MODEL_KEY];
 }
 
-function extractGithubUsername(input) {
+function getRequiredApiKey(provider) {
+  return provider === "openrouter" ? openrouterApiKey : openaiApiKey;
+}
+
+// Constructed lazily (not at module load) so a missing key doesn't crash the whole
+// process at import time — the handler's own key checks below handle it as a normal
+// 500 response instead, and this module stays importable in tests/CI without needing
+// any real (or dummy) API keys set.
+function getClient(modelOption) {
+  return modelOption.provider === "openrouter"
+    ? new OpenAI({ apiKey: openrouterApiKey, baseURL: "https://openrouter.ai/api/v1", maxRetries: 2 })
+    : new OpenAI({ apiKey: openaiApiKey, maxRetries: 2 });
+}
+
+// Apify poll budget: kept short so scraping leaves enough of the 60s function
+// maxDuration (see vercel.json) for the OpenAI call that follows.
+const APIFY_POLL_MAX_ATTEMPTS = 10;
+const APIFY_POLL_INTERVAL_MS = 2000;
+
+export function extractGithubUsername(input) {
   const value = String(input || "").trim();
 
   if (!value) {
@@ -50,8 +76,8 @@ async function scrapeGithub(input) {
   const reposUrl = `https://api.github.com/users/${username}/repos?sort=updated&per_page=10`;
 
   const [userResponse, reposResponse] = await Promise.all([
-    fetch(userUrl),
-    fetch(reposUrl),
+    fetchWithRetry(userUrl),
+    fetchWithRetry(reposUrl),
   ]);
 
   if (!userResponse.ok) {
@@ -91,7 +117,7 @@ async function scrapeGithub(input) {
   return [...lines, ...formattedRepos].join("\n");
 }
 
-function extractInstagramUsername(input) {
+export function extractInstagramUsername(input) {
   const value = String(input || "").trim();
 
   if (!value) {
@@ -112,7 +138,7 @@ function extractInstagramUsername(input) {
   throw new Error("Invalid Instagram input");
 }
 
-function extractPostCaptions(postsSource) {
+export function extractPostCaptions(postsSource) {
   if (!Array.isArray(postsSource)) {
     return [];
   }
@@ -123,7 +149,7 @@ function extractPostCaptions(postsSource) {
     .slice(0, 5);
 }
 
-function extractPostImageUrls(postsSource) {
+export function extractPostImageUrls(postsSource) {
   if (!Array.isArray(postsSource)) {
     return [];
   }
@@ -186,14 +212,20 @@ async function scrapeInstagram(url) {
 
   for (const actor of actorCandidates) {
     try {
-      const resp = await fetch(`https://api.apify.com/v2/acts/${actor}/runs`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apifyToken}`,
-          "Content-Type": "application/json",
+      // Bounded to 1 retry — this POST starts a billed actor run, so we don't want to
+      // pile on retries and risk starting the same run multiple times.
+      const resp = await fetchWithRetry(
+        `https://api.apify.com/v2/acts/${actor}/runs`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apifyToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ usernames: [username], resultsLimit: 5 }),
         },
-        body: JSON.stringify({ usernames: [username], resultsLimit: 5 }),
-      });
+        { retries: 1 }
+      );
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => "(no body)");
@@ -217,12 +249,12 @@ async function scrapeInstagram(url) {
 
   // Poll actor run status until SUCCEEDED or FAILED (timeout after attempts)
   let runStatus = "RUNNING";
-  for (let attempt = 0; attempt < 15; attempt += 1) {
-    const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}`, {
-      headers: {
-        Authorization: `Bearer ${apifyToken}`,
-      },
-    });
+  for (let attempt = 0; attempt < APIFY_POLL_MAX_ATTEMPTS; attempt += 1) {
+    const statusResponse = await fetchWithRetry(
+      `https://api.apify.com/v2/actor-runs/${runId}`,
+      { headers: { Authorization: `Bearer ${apifyToken}` } },
+      { retries: 1, baseDelayMs: 300 }
+    );
 
     if (!statusResponse.ok) {
     } else {
@@ -233,14 +265,14 @@ async function scrapeInstagram(url) {
       }
     }
 
-    if (attempt < 14) await new Promise((r) => setTimeout(r, 3000));
+    if (attempt < APIFY_POLL_MAX_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, APIFY_POLL_INTERVAL_MS));
   }
 
   if (runStatus !== "SUCCEEDED") {
     throw new Error("Instagram scrape timed out");
   }
 
-  const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${defaultDatasetId}/items`, {
+  const datasetResponse = await fetchWithRetry(`https://api.apify.com/v2/datasets/${defaultDatasetId}/items`, {
     headers: {
       Authorization: `Bearer ${apifyToken}`,
     },
@@ -295,6 +327,32 @@ async function scrapeInstagram(url) {
   };
 }
 
+export function extractLinkedInSlug(url) {
+  const match = String(url || "").match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return match ? match[1].toLowerCase() : String(url || "").trim().toLowerCase();
+}
+
+// Tries multiple possible field paths against a scraped object (supports nested
+// dot-notation paths like "profile.name"), returning the first present, non-empty value.
+export function getField(obj, ...paths) {
+  for (const path of paths) {
+    if (!path) continue;
+    const parts = String(path).split(".");
+    let cur = obj;
+    let ok = true;
+    for (const p of parts) {
+      if (cur && Object.prototype.hasOwnProperty.call(cur, p)) {
+        cur = cur[p];
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && cur !== undefined && cur !== null && cur !== "") return cur;
+  }
+  return undefined;
+}
+
 async function scrapeLinkedIn(url) {
   // Validate LinkedIn URL
   if (!String(url || "").includes("linkedin.com/in/")) {
@@ -321,14 +379,20 @@ async function scrapeLinkedIn(url) {
 
   for (const actor of actorCandidates) {
     try {
-      const resp = await fetch(`https://api.apify.com/v2/acts/${actor}/runs`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apifyToken}`,
-          "Content-Type": "application/json",
+      // Bounded to 1 retry — this POST starts a billed actor run, so we don't want to
+      // pile on retries and risk starting the same run multiple times.
+      const resp = await fetchWithRetry(
+        `https://api.apify.com/v2/acts/${actor}/runs`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apifyToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ profileUrls: [url], resultsLimit: 1 }),
         },
-        body: JSON.stringify({ profileUrls: [url], resultsLimit: 1 }),
-      });
+        { retries: 1 }
+      );
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => "(no body)");
@@ -351,17 +415,13 @@ async function scrapeLinkedIn(url) {
     throw new Error("Failed to start LinkedIn scrape");
   }
 
-  if (!runId || !defaultDatasetId) {
-    throw new Error("Failed to start LinkedIn scrape");
-  }
-
   let runStatus = "RUNNING";
-  for (let attempt = 0; attempt < 15; attempt += 1) {
-    const statusResponse = await fetch(`https://api.apify.com/v2/actor-runs/${runId}`, {
-      headers: {
-        Authorization: `Bearer ${apifyToken}`,
-      },
-    });
+  for (let attempt = 0; attempt < APIFY_POLL_MAX_ATTEMPTS; attempt += 1) {
+    const statusResponse = await fetchWithRetry(
+      `https://api.apify.com/v2/actor-runs/${runId}`,
+      { headers: { Authorization: `Bearer ${apifyToken}` } },
+      { retries: 1, baseDelayMs: 300 }
+    );
 
     if (!statusResponse.ok) {
       throw new Error("Failed to check LinkedIn scrape status");
@@ -374,8 +434,8 @@ async function scrapeLinkedIn(url) {
       break;
     }
 
-    if (attempt < 14) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+    if (attempt < APIFY_POLL_MAX_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, APIFY_POLL_INTERVAL_MS));
     }
   }
 
@@ -385,7 +445,7 @@ async function scrapeLinkedIn(url) {
     );
   }
 
-  const datasetResponse = await fetch(`https://api.apify.com/v2/datasets/${defaultDatasetId}/items`, {
+  const datasetResponse = await fetchWithRetry(`https://api.apify.com/v2/datasets/${defaultDatasetId}/items`, {
     headers: {
       Authorization: `Bearer ${apifyToken}`,
     },
@@ -402,25 +462,6 @@ async function scrapeLinkedIn(url) {
     throw new Error(
       "Could not fetch LinkedIn profile. Make sure the URL is correct and the profile is public."
     );
-  }
-  // Helper to try multiple possible field paths (supports nested with dot notation)
-  function getField(obj, ...paths) {
-    for (const path of paths) {
-      if (!path) continue;
-      const parts = String(path).split(".");
-      let cur = obj;
-      let ok = true;
-      for (const p of parts) {
-        if (cur && Object.prototype.hasOwnProperty.call(cur, p)) {
-          cur = cur[p];
-        } else {
-          ok = false;
-          break;
-        }
-      }
-      if (ok && cur !== undefined && cur !== null && cur !== "") return cur;
-    }
-    return undefined;
   }
 
   // Extract fields with broader fallbacks and nested paths
@@ -516,7 +557,53 @@ async function scrapeLinkedIn(url) {
   return lines.join("\n");
 }
 
-function getSystemPrompt(type, severity) {
+// Incrementally extracts the value of the "roast" key from a partial JSON string as it
+// streams in from the model, without waiting for the whole `{ "roast": ..., "tips": [...] }`
+// object to finish. Stops (without marking complete) the moment it runs out of buffer,
+// including mid-escape-sequence, so it never emits garbage for a half-received escape.
+export function extractStreamingRoastText(buffer) {
+  const keyMatch = buffer.match(/"roast"\s*:\s*"/);
+  if (!keyMatch) {
+    return { text: "", complete: false };
+  }
+
+  const escapeMap = { n: "\n", t: "\t", r: "\r", '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f" };
+  let i = keyMatch.index + keyMatch[0].length;
+  let text = "";
+  let complete = false;
+
+  while (i < buffer.length) {
+    const ch = buffer[i];
+
+    if (ch === "\\") {
+      const next = buffer[i + 1];
+      if (next === undefined) break; // incomplete escape — wait for more data
+
+      if (next === "u") {
+        const hex = buffer.slice(i + 2, i + 6);
+        if (hex.length < 4) break; // incomplete unicode escape — wait for more data
+        text += String.fromCharCode(parseInt(hex, 16));
+        i += 6;
+      } else {
+        text += escapeMap[next] ?? next;
+        i += 2;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      complete = true;
+      break;
+    }
+
+    text += ch;
+    i += 1;
+  }
+
+  return { text, complete };
+}
+
+export function getSystemPrompt(type, severity) {
   const severityInstructions = {
     mild: "Keep it light and friendly, more funny than harsh.",
     medium: "Balance funny with savage. Make it sting a little.",
@@ -598,28 +685,82 @@ function defaultResumeResponse() {
   };
 }
 
+function defaultGithubResponse() {
+  return {
+    roast: "A contribution graph full of green squares and a README that says nothing real — classic. Half these repos were forked, poked once, and abandoned like a gym membership. You're not building a portfolio, bhai, you're building evidence for a crime scene. We're all going to die anyway, so at least pick a project and finish it before that happens.",
+    tips: [
+      "Pin your 3 strongest repos, not your 3 most recent ones",
+      "Write a real README with what the project does and why",
+      "Delete or archive the dead forks cluttering your profile",
+      "Add a proper bio instead of leaving it blank, bas do it",
+      "Commit messages should say what changed, not 'fix'",
+      "Show off one finished project over five half-done ones",
+    ],
+  };
+}
+
+function defaultLinkedInResponse() {
+  return {
+    roast: "'Passionate thought leader synergizing growth' — bhai, nobody knows what your job actually is. The headline is buzzword jugaad stitched together to avoid saying anything concrete, and the About section reads like a motivational poster had a breakdown. Truly pathetic performance of a career. We're all going to die anyway, so you might as well say what you actually do for a living.",
+    tips: [
+      "Rewrite your headline to say the actual role you do",
+      "Cut buzzwords like 'synergy' and 'thought leader' entirely",
+      "Lead your About section with concrete results, not adjectives",
+      "List 3-5 real skills instead of 50 vague endorsements",
+      "Keep experience bullets specific — numbers over adjectives",
+      "Bas, stop posting humble-brags disguised as advice",
+    ],
+  };
+}
+
+function defaultInstagramResponse() {
+  return {
+    roast: "A grid full of gym selfies, sunsets, and a bio with three emojis doing the heavy lifting of an entire personality. The captions are trying so hard to sound deep they've looped back around to saying nothing at all. It's giving 'aesthetic over substance,' bhai, and the substance clocked out a while ago. We're all going to die anyway, so maybe post something real for once.",
+    tips: [
+      "Write a bio that says something specific about you",
+      "Cut the caption filler — say one real thing per post",
+      "Post less often but keep the quality consistent, no jugaad",
+      "Pick a visual theme instead of a random content dump",
+      "Drop the emoji-as-personality routine, bas let the photo speak",
+      "Show something you actually made, not just where you were",
+    ],
+  };
+}
+
+const FALLBACK_RESPONSES = {
+  resume: defaultResumeResponse,
+  github: defaultGithubResponse,
+  linkedin: defaultLinkedInResponse,
+  instagram: defaultInstagramResponse,
+};
+
+function sendSseEvent(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 export default async function handler(req, res) {
+  if (handleCorsPreflight(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { url, type, severity = "medium" } = req.body;
+  const { url, type, severity = "medium", model: modelKey } = req.body;
 
   if (!url || !type) return res.status(400).json({ error: "Missing url or type" });
-  if (!apiKey) return res.status(500).json({ error: "Server misconfigured: missing API key" });
+
+  const modelOption = resolveModelOption(modelKey);
+  const requiredApiKey = getRequiredApiKey(modelOption.provider);
+  if (!requiredApiKey) {
+    return res.status(500).json({ error: `Server misconfigured: missing API key for ${modelOption.label}` });
+  }
 
   // Rate limiting check (moved inside handler to prevent cold-start crashes)
   const ip = getClientIP(req);
+  let rateLimitInfo = null;
   try {
-    const redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    const ratelimit = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(5, "1 h"),
-    });
-    const { success } = await ratelimit.limit(ip);
+    const ratelimit = createRatelimit();
+    const { success, limit, remaining, reset } = await ratelimit.limit(ip);
+    rateLimitInfo = { limit, remaining, reset };
     if (!success) {
-      return res.status(429).json({ error: "Too many requests. Try again later." });
+      return res.status(429).json({ error: "Too many requests. Try again later.", rateLimit: rateLimitInfo });
     }
   } catch (rateLimitError) {
     console.error("Rate limit init failed:", rateLimitError.message);
@@ -628,26 +769,56 @@ export default async function handler(req, res) {
 
   const selectedSeverity = ["mild", "medium", "destroy me"].includes(severity) ? severity : "medium";
 
+  let profileData;
+  let userMessageContent;
   try {
-    let profileData = url;
+    profileData = url;
 
-    // Scrape GitHub, Instagram, or LinkedIn
+    // Scrape GitHub, Instagram, or LinkedIn — cached briefly so re-roasting the same
+    // profile at a different severity doesn't re-trigger a full Apify run.
     if (type === "github") {
-      profileData = await scrapeGithub(url);
+      profileData = await withScrapeCache("github", extractGithubUsername(url), () => scrapeGithub(url));
     } else if (type === "instagram") {
-      profileData = await scrapeInstagram(url);
+      profileData = await withScrapeCache("instagram", extractInstagramUsername(url), () => scrapeInstagram(url));
     } else if (type === "linkedin") {
-      profileData = await scrapeLinkedIn(url);
+      profileData = await withScrapeCache("linkedin", extractLinkedInSlug(url), () => scrapeLinkedIn(url));
     }
 
     // Build user message content - always use text-only for Instagram (no images)
-    const userMessageContent = type === "instagram"
+    userMessageContent = type === "instagram"
       ? (typeof profileData === "object" ? profileData.text : profileData)
       : profileData;
 
-    const response = await client.chat.completions.create({
-      model: "gpt-4o",
+    // Cap input length to control token cost and limit prompt-injection surface from untrusted profile text
+    const MAX_INPUT_LENGTH = 4000;
+    if (typeof userMessageContent === "string" && userMessageContent.length > MAX_INPUT_LENGTH) {
+      userMessageContent = userMessageContent.slice(0, MAX_INPUT_LENGTH);
+    }
+  } catch (e) {
+    // Scrape failures happen before we've committed to a response format, so these can
+    // still be a plain JSON fallback (unlike LLM failures below, which happen mid-stream).
+    console.error(e);
+    const fallback = FALLBACK_RESPONSES[type];
+    if (fallback) {
+      return res.json({ ...fallback(), rateLimit: rateLimitInfo });
+    }
+    return res.status(500).json({ error: "Roast failed", rateLimit: rateLimitInfo });
+  }
+
+  // Scraping succeeded — stream the roast text token-by-token over SSE as it's generated,
+  // instead of making the user wait for the full `{ roast, tips }` JSON blob.
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  let buffer = "";
+  let lastSentRoast = "";
+  try {
+    const stream = await getClient(modelOption).chat.completions.create({
+      model: modelOption.model,
       response_format: { type: "json_object" },
+      stream: true,
       messages: [
         {
           role: "system",
@@ -657,30 +828,51 @@ export default async function handler(req, res) {
       ],
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (!delta) continue;
+
+      buffer += delta;
+      const { text } = extractStreamingRoastText(buffer);
+      if (text && text !== lastSentRoast) {
+        lastSentRoast = text;
+        sendSseEvent(res, "roast", { text });
+      }
+    }
+
+    if (!buffer) {
       throw new Error("Empty OpenAI response");
     }
 
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(buffer);
     if (!parsed.roast || !Array.isArray(parsed.tips)) {
       throw new Error("Invalid response format");
     }
 
-    // Include raw scraped data for debugging/testing
-    // For Instagram, include the text portion; for LinkedIn include the scraped string
-    const debugData = type === "instagram" && typeof profileData === "object" ? profileData.text : profileData;
-    res.json({
-      ...parsed,
-      _debug_scraped_data: debugData,
-      _debug_scraped_raw: profileData,
+    const debugPayload =
+      process.env.NODE_ENV === "development"
+        ? {
+            _debug_scraped_data: type === "instagram" && typeof profileData === "object" ? profileData.text : profileData,
+            _debug_scraped_raw: profileData,
+          }
+        : {};
+
+    sendSseEvent(res, "complete", {
+      roast: parsed.roast,
+      tips: parsed.tips,
+      modelUsed: modelOption.label,
+      rateLimit: rateLimitInfo,
+      ...debugPayload,
     });
   } catch (e) {
     console.error(e);
-    if (type === "resume") {
-      return res.json(defaultResumeResponse());
-    }
-
-    res.status(500).json({ error: "Roast failed" });
+    // Headers (and possibly partial roast text) are already sent at this point, so a
+    // failure here can't downgrade to a plain error status — send the canned fallback
+    // as a "complete" event instead; the client can't tell it apart from a real one.
+    const fallback = FALLBACK_RESPONSES[type];
+    const fallbackData = fallback ? fallback() : { roast: "Something went wrong generating this roast.", tips: [] };
+    sendSseEvent(res, "complete", { ...fallbackData, rateLimit: rateLimitInfo });
+  } finally {
+    res.end();
   }
 }

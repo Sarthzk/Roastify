@@ -11,6 +11,8 @@ export default function InputForm({
   onTypeChange,
   severity,
   onSeverityChange,
+  model,
+  onModelChange,
   onSubmit,
   loading,
 }) {
@@ -25,6 +27,12 @@ export default function InputForm({
   ];
 
   const severities = ["mild", "medium", "destroy me"];
+
+  const models = [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "command-a", label: "Command A" },
+    { value: "command-r", label: "Command R" },
+  ];
 
   function handleKey(e) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit();
@@ -325,6 +333,57 @@ export default function InputForm({
                 }}
               >
                 {value}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <label
+          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+          style={{ color: "#646669" }}
+        >
+          Model
+        </label>
+        <div className="grid grid-cols-3 gap-3">
+          {models.map(({ value, label }) => {
+            const selected = model === value;
+
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onModelChange(value)}
+                disabled={loading}
+                style={{
+                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
+                  color: selected ? "#e2b714" : "#646669",
+                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  borderWidth: "1px",
+                  borderLeftWidth: "2px",
+                  opacity: loading ? 0.5 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  borderRadius: "2px",
+                  fontFamily: "'Courier New', monospace",
+                }}
+                className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
+                onMouseEnter={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#1a1a1a";
+                    e.currentTarget.style.borderLeftColor = "#e2b714";
+                    e.currentTarget.style.color = "#e2b714";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading && !selected) {
+                    e.currentTarget.style.backgroundColor = "#0e0e0e";
+                    e.currentTarget.style.borderLeftColor = "#2c2e31";
+                    e.currentTarget.style.color = "#646669";
+                  }
+                }}
+              >
+                {label}
               </button>
             );
           })}
