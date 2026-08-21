@@ -8,6 +8,15 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-08-21
 
+### Share roast button hover fix
+`.action-btn--share` was deliberately excluded from the actions row's generic hover
+style (`color: var(--accent); background: var(--ground-5)`) — the original design
+handoff explicitly says "No hover style; the copied state is the feedback" for that
+button. User feedback: wanted it consistent with Save As Image / Roast Another instead.
+Removed the `:not(.action-btn--share)` exclusion in `src/index.css` so all three action
+buttons share the same hover treatment; the copied-state color (`.action-btn--share.is-
+copied`) is unaffected and still applies on top. `npm run build`/`lint` clean.
+
 ### Auto-scroll-to-output, actually fixed this time
 Implemented and reportedly verified in the previous session, but the user found it
 wasn't working. Investigated rather than assumed a cause, per instruction. Traced it to

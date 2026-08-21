@@ -944,7 +944,7 @@ a:hover {
 .action-btn + .action-btn {
   border-left: 1px solid var(--rule);
 }
-.action-btn:not(.action-btn--share):hover {
+.action-btn:hover {
   color: var(--accent);
   background: var(--ground-5);
 }
