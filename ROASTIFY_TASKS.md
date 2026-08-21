@@ -717,6 +717,15 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   and slow (Instagram) roast, and for a fast error — in all cases the final scroll
   position landed exactly at the Output section's true top edge, not a clamped
   approximation.
+- [x] **Follow-up same day**: user wanted the first scroll to fire immediately on click
+  rather than waiting for the first streamed chunk. Moved trigger (1) from "first
+  content" back to synchronous-at-submit-time — same clamped-and-short-but-instant
+  tradeoff the original (broken) version had, but now paired with the terminal-state
+  correction from the fix above, so the early jump is still followed by a corrective
+  scroll once the response is fully in. Net: `hasScrolledToOutputRef` guard removed
+  (no longer needed — each trigger now fires at a point that naturally happens at most
+  once per request), `scrollToOutput()` extracted once and called from both
+  `handleSubmit` and the terminal-state effect instead of being duplicated.
 
 ## 12. UI scale-down (2026-08-21, adjusted 90% → 95% → 97% same day)
 

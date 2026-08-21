@@ -42,7 +42,6 @@ export default function App() {
   const [rateLimitStatus, setRateLimitStatus] = useState(null);
   const [resetKey, setResetKey] = useState(0);
   const outputRef = useRef(null);
-  const hasScrolledToOutputRef = useRef(false);
 
   const status = loading ? "streaming" : error ? "error" : result ? "complete" : "idle";
   const instagramEnabled = rateLimitStatus?.instagramEnabled ?? true;
@@ -62,39 +61,25 @@ export default function App() {
     }
   }, [instagramEnabled, type]);
 
-  // Auto-scroll to the Output section — not at submit time. Scrolling immediately on
-  // submit measures the Output section while the page is still short (idle state), and
-  // window.scrollTo clamps its target to the page's height *at the moment it's called*
-  // — it doesn't keep advancing on its own as streamed content grows the page taller
-  // afterward. Confirmed empirically: scrolling on submit landed at the page's then-max
-  // scrollable position, ~650px short of the Output section; even scrolling on the
-  // first streamed chunk still landed short, since the page is only slightly taller at
-  // that point than it was at submit time — the real growth (the rest of the roast,
-  // then the meta/fixes/actions rows) all happens after.
-  //
-  // Two triggers, so the scroll is both responsive and eventually correct:
-  // 1. As soon as there's anything to see (first chunk, or an immediate error) — once
-  //    per request (`hasScrolledToOutputRef`), so the ~100+ chunks in a streamed roast
-  //    don't each trigger a re-scroll.
-  // 2. Once more when the request reaches a terminal state (complete or error) — by
-  //    then the page has grown to its real final height, so this corrects for whatever
-  //    the first scroll's clamped target undershot.
-  useEffect(() => {
-    function scrollToOutput() {
-      const outputTop = outputRef.current?.getBoundingClientRect().top;
-      if (outputTop !== undefined) {
-        window.scrollTo({ top: window.scrollY + outputTop, behavior: "smooth" });
-      }
+  // Scrolls the Output section to the top of the viewport. window.scrollTo clamps its
+  // target to the page's scrollable height *at the moment it's called* — it doesn't
+  // keep advancing on its own as streamed content grows the page taller afterward. So
+  // the immediate on-click call below (for instant feedback) can land short of the
+  // Output section on a page that's still short (idle state); the effect below it fires
+  // again once the request reaches a terminal state, by which point the page has grown
+  // to its real final height, correcting for whatever the first call undershot.
+  function scrollToOutput() {
+    const outputTop = outputRef.current?.getBoundingClientRect().top;
+    if (outputTop !== undefined) {
+      window.scrollTo({ top: window.scrollY + outputTop, behavior: "smooth" });
     }
+  }
 
-    if ((result?.roast || error) && !hasScrolledToOutputRef.current) {
-      hasScrolledToOutputRef.current = true;
-      scrollToOutput();
-    }
+  useEffect(() => {
     if (status === "complete" || status === "error") {
       scrollToOutput();
     }
-  }, [result?.roast, error, status]);
+  }, [status]);
 
   function handleTypeChange(newType) {
     setType(newType);
@@ -116,7 +101,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setResult(null);
-    hasScrolledToOutputRef.current = false;
+    scrollToOutput();
     try {
       // Production users can't select a model (the picker only renders in dev — see
       // InputForm.jsx) — don't send a `model` field at all outside dev, so there's

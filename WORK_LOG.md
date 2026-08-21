@@ -44,6 +44,18 @@ Scope: only `src/App.jsx` touched — a `useRef` guard flag and one `useEffect`,
 component restructuring. 95/95 tests still pass (frontend has no test suite), `npm run
 lint` and `npm run build` both clean.
 
+**Follow-up same day**: user wanted the scroll to fire immediately on click rather than
+waiting for the first streamed chunk to land. Moved the "responsive" trigger back to
+synchronous-at-submit-time (`handleSubmit` calls `scrollToOutput()` directly again) —
+same clamped-and-short-but-*instant* tradeoff the original broken version had, except
+now the terminal-state effect from the fix above still fires afterward and corrects the
+final position once the response is fully in, so accuracy isn't lost, just the earlier
+jump's precision. The `hasScrolledToOutputRef` guard is no longer needed (both triggers
+now fire at points that naturally happen at most once per request) and was removed;
+`scrollToOutput()` is now a single function defined once and called from both
+`handleSubmit` and the terminal-state effect instead of being duplicated inline. Build,
+lint, and the (unaffected) test suite all still clean.
+
 ### UI scale-down: zoom, not font-size
 Asked to add `font-size: 90%` to the existing `html, body,
 #root` rule in `src/index.css` — literally that one line, with an explicit instruction
