@@ -69,6 +69,8 @@ rows, a completed roast card, fixes list, and footer confirmed no clipping, dist
 or misalignment.
 Scope: just the one property on that one rule in `src/index.css`. 95/95 tests still
 pass (frontend has no test suite), `npm run lint` and `npm run build` both clean.
+**Follow-up same day**: adjusted from `90%` to `95%` per user feedback — same property,
+same rule, one value changed.
 
 ### Visual redesign (Claude Design v2 handoff) + Instagram kill switch
 Implemented a full presentation-layer redesign from a Claude Design handoff, read via the
