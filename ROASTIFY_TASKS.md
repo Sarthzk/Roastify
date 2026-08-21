@@ -696,3 +696,24 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   and `api/rate-limit-status.test.js` coverage (2 pre-existing assertions there needed
   updating for the new response field — an intentional, in-scope shape change, not a
   regression). 95/95 total passing. `npm run lint` and `npm run build` both clean.
+
+## 11. Auto-scroll to Output, actually fixed (2026-08-21)
+
+- [x] Auto-scroll to the Output section wasn't actually working, despite being
+  implemented and reportedly verified in the prior session. Root cause, confirmed
+  empirically: the scroll fired once, synchronously, at submit time — measuring the
+  Output section's position while the page was still short (idle state). `window.
+  scrollTo` clamps its target to the page's height *at the moment it's called*; it
+  doesn't keep advancing as streamed content grows the page taller afterward. The
+  original implementation's own "verification" last session only ever exercised the
+  math/positioning logic with instant scrolling in a test harness where `behavior:
+  'smooth'` doesn't animate at all — it never actually confirmed the shipped smooth
+  version scrolled to a *useful* final position once real content existed.
+  Fix (`src/App.jsx`): two scroll triggers instead of one — (1) as soon as there's
+  anything to see (first streamed chunk, or an immediate error), gated to fire once per
+  request; (2) once more when the request reaches a terminal state (complete or error),
+  by which point the page has grown to its real final height, correcting for whatever
+  the first, early scroll's clamped target undershot. Verified for both a fast (GitHub)
+  and slow (Instagram) roast, and for a fast error — in all cases the final scroll
+  position landed exactly at the Output section's true top edge, not a clamped
+  approximation.

@@ -8,6 +8,42 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-08-21
 
+### Auto-scroll-to-output, actually fixed this time
+Implemented and reportedly verified in the previous session, but the user found it
+wasn't working. Investigated rather than assumed a cause, per instruction. Traced it to
+`src/App.jsx`'s `handleSubmit`, which fired `window.scrollTo` synchronously at submit
+time — before the Output section had any real content, while the page was still in its
+short idle-state height. Confirmed empirically in a real browser: `window.scrollTo`'s
+target gets clamped to the page's scrollable height *at the instant it's called*; it
+does not keep advancing on its own as streamed content grows the page taller afterward.
+The prior session's own "verification" of this code had a gap — it confirmed the
+ref/position math was correct using *instant* scrolling (because `behavior: 'smooth'`
+doesn't animate at all in the claude-in-chrome browser-automation harness used to test
+it), then restored `behavior: 'smooth'` for the shipped version without re-confirming
+that specific version actually reached a useful final position via a real click. It
+didn't: on a real click, the initial submit-time scroll landed ~650px short of the
+Output section, and (since it only fired once) never corrected as the page grew roughly
+1300px taller while the roast streamed in and the meta/fixes/actions rows appeared.
+Fix: moved the trigger out of submit-time and into a `useEffect` with two firing
+conditions instead of one blind pre-content scroll: (1) as soon as there's anything to
+see — the first streamed chunk, or an immediate error — gated to fire once per request
+via a ref flag (`result.roast` changes on every one of a streamed roast's ~100+ chunks;
+re-scrolling on each would be janky); (2) once more when the request reaches a terminal
+state (`status === "complete" || "error"`), by which point the page has grown to its
+real final height, so this corrects whatever the early scroll's clamped target
+undershot. Verified with real clicks (not just programmatic ones — an earlier attempt
+using raw coordinate clicks was thrown off by a devicePixelRatio mismatch between the
+screenshot tool's pixel space and the browser's actual CSS pixels, landing clicks on the
+wrong element entirely; switched to semantic element refs via the `find` tool to avoid
+that) against a real running server for a fast (GitHub) roast, a slow (Instagram) roast,
+and a fast scrape-validation error — in every case the final scroll position landed
+exactly at the Output section's true top edge (computed the same, stable value each
+time: the section's absolute Y-position doesn't change during a request, only its own
+height does), not a clamped approximation short of it.
+Scope: only `src/App.jsx` touched — a `useRef` guard flag and one `useEffect`, no
+component restructuring. 95/95 tests still pass (frontend has no test suite), `npm run
+lint` and `npm run build` both clean.
+
 ### Visual redesign (Claude Design v2 handoff) + Instagram kill switch
 Implemented a full presentation-layer redesign from a Claude Design handoff, read via the
 DesignSync MCP tool from the user's claude.ai/design project (`Roastify aesthetic
