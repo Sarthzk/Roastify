@@ -44,6 +44,32 @@ Scope: only `src/App.jsx` touched — a `useRef` guard flag and one `useEffect`,
 component restructuring. 95/95 tests still pass (frontend has no test suite), `npm run
 lint` and `npm run build` both clean.
 
+### UI scale-down: zoom, not font-size
+Asked to add `font-size: 90%` to the existing `html, body,
+#root` rule in `src/index.css` — literally that one line, with an explicit instruction
+to check first for any pre-existing root-level scale declaration (none found, in either
+the design handoff bundle or the working tree) and to visually verify text *and*
+spacing shrink together afterward. Applied it, built cleanly — then the verification
+step itself caught the problem: measured `getComputedStyle` before/after in a real
+browser and found `html`'s font-size genuinely became `14.4px`, but every single
+font-size and spacing value actually rendered in the redesign (`.hero-title`,
+`.row-label`, `.submit` padding, etc.) was completely unchanged, and
+`document.body.scrollHeight` was identical. Root cause: every value in this codebase's
+CSS is a hardcoded `px`, copied verbatim from the design handoff's own literal pixel
+values — nothing uses `rem`/`em`, so there's nothing for a root font-size change to
+cascade into. `font-size: 90%` on the root was a technically-applied but functionally
+inert no-op. Flagged this back rather than silently ship something that wouldn't pass
+the user's own stated verification step; offered `zoom: 90%` or a `transform: scale()`
+wrapper as real alternatives. User picked `zoom: 90%` (same rule, same one line, no new
+token — matches the original scope exactly, just a property that actually works).
+Verified: `document.body.scrollHeight` dropped from 1567px to exactly 1410px (1567 ×
+0.9, confirming genuine proportional scaling of layout + text + spacing together, not
+just a reported font-size number), plus a visual pass across the hero, source/voice
+rows, a completed roast card, fixes list, and footer confirmed no clipping, distortion,
+or misalignment.
+Scope: just the one property on that one rule in `src/index.css`. 95/95 tests still
+pass (frontend has no test suite), `npm run lint` and `npm run build` both clean.
+
 ### Visual redesign (Claude Design v2 handoff) + Instagram kill switch
 Implemented a full presentation-layer redesign from a Claude Design handoff, read via the
 DesignSync MCP tool from the user's claude.ai/design project (`Roastify aesthetic

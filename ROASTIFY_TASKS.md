@@ -717,3 +717,15 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   and slow (Instagram) roast, and for a fast error — in all cases the final scroll
   position landed exactly at the Output section's true top edge, not a clamped
   approximation.
+
+## 12. UI scale-down to ~90% (2026-08-21)
+
+- [x] First attempt (`font-size: 90%` on `html, body, #root`, as literally requested)
+  was empirically verified to have **zero visible effect** — every font-size and
+  spacing value in the redesign is a hardcoded `px` (copied verbatim from the design
+  handoff), so there's nothing `rem`/`em`-relative for a root font-size change to
+  cascade into. Flagged this to the user rather than ship a no-op; switched to
+  `zoom: 90%` on the same rule instead, which scales layout, text, and spacing together
+  at the rendering level regardless of what units the CSS uses — confirmed via
+  `document.body.scrollHeight` dropping from 1567px to exactly 1410px (1567 × 0.9) and a
+  visual screenshot pass across hero/source/voice/roast-card/footer for alignment.
