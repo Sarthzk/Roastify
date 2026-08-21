@@ -51,7 +51,7 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).not.toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true });
+    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: true });
   });
 
   it("still queries the real rate limit when NODE_ENV is unset", async () => {
@@ -61,7 +61,7 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890 });
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true });
   });
 
   it("still queries the real rate limit when NODE_ENV is production", async () => {
@@ -71,6 +71,38 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890 });
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true });
+  });
+});
+
+describe("rate-limit-status handler — Instagram kill switch", () => {
+  const originalInstagramEnabled = process.env.INSTAGRAM_ENABLED;
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalInstagramEnabled === undefined) delete process.env.INSTAGRAM_ENABLED;
+    else process.env.INSTAGRAM_ENABLED = originalInstagramEnabled;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it("reports instagramEnabled: false when INSTAGRAM_ENABLED=false, including in the Upstash success path", async () => {
+    delete process.env.NODE_ENV;
+    process.env.INSTAGRAM_ENABLED = "false";
+    const res = createMockRes();
+
+    await handler(req(), res);
+
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: false });
+  });
+
+  it("reports instagramEnabled: false even in the dev-bypass response", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.INSTAGRAM_ENABLED = "false";
+    const res = createMockRes();
+
+    await handler(req(), res);
+
+    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: false });
   });
 });

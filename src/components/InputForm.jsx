@@ -1,9 +1,49 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PERSONAS } from "../lib/personas";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+
+// Order matches the design handoff: the two URL sources adjacent, then the two PDF
+// sources adjacent, so the input area never changes kind between neighbouring cards.
+const PROFILE_TYPES = [
+  { value: "github", index: "01", name: "github", kind: "link", label: "Profile URL", placeholder: "https://github.com/username" },
+  { value: "instagram", index: "02", name: "instagram", kind: "link", label: "Profile URL", placeholder: "https://instagram.com/username" },
+  {
+    value: "linkedin",
+    index: "03",
+    name: "linkedin",
+    kind: "pdf",
+    label: "Profile PDF",
+    hint: "Open your LinkedIn profile → More → Save to PDF",
+    dropLabel: "drop your linkedin pdf",
+    pastePlaceholder: "…or paste the text of your profile here.",
+  },
+  {
+    value: "resume",
+    index: "04",
+    name: "resume",
+    kind: "pdf",
+    label: "Resume PDF",
+    hint: "PDF works best. Plain text is fine too.",
+    dropLabel: "drop your resume pdf",
+    pastePlaceholder: "…or paste your resume text here.",
+  },
+];
+
+const SEVERITIES = [
+  { value: "mild", note: "gentle" },
+  { value: "medium", note: "honest" },
+  { value: "destroy me", note: "no mercy" },
+];
+
+// Dev-only comparison options — production always uses the server's pinned default
+// (see resolveProductionSafeModelOption in api/roast.js) regardless of what's sent.
+const MODELS = [
+  { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
+  { value: "gpt-4o", label: "GPT-4o" },
+];
 
 export default function InputForm({
   url,
@@ -18,30 +58,31 @@ export default function InputForm({
   onModelChange,
   onSubmit,
   loading,
+  instagramEnabled,
 }) {
-  // Shared by the resume and linkedin types — both are pasted-text-or-uploaded-file
-  // inputs (linkedin via a "Save to PDF" export, since the Apify LinkedIn actor never
-  // worked unauthenticated), so they use the same upload/paste UI and extraction logic.
-  const [pastedText, setPastedText] = useState(url);
+  const [fileInfo, setFileInfo] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
-  const isUploadType = type === "resume" || type === "linkedin";
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const profileTypes = [
-    { value: "github", label: "01 github" },
-    { value: "linkedin", label: "02 linkedin" },
-    { value: "instagram", label: "03 instagram" },
-    { value: "resume", label: "04 resume" },
-  ];
+  const visibleTypes = instagramEnabled ? PROFILE_TYPES : PROFILE_TYPES.filter((t) => t.value !== "instagram");
+  const active = PROFILE_TYPES.find((t) => t.value === type) || PROFILE_TYPES[0];
+  const isUploadType = active.kind === "pdf";
 
-  const severities = ["mild", "medium", "destroy me"];
-
-  // Dev-only comparison options — production always uses the server's pinned default
-  // (see resolveProductionSafeModelOption in api/roast.js) regardless of what's sent.
-  const models = [
-    { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
-    { value: "gpt-4o", label: "GPT-4o" },
-  ];
+  // Switching source clears whatever was typed/uploaded for the previous one — the file
+  // confirmation card and any upload error/status are presentation state local to this
+  // component; `url` itself (the actual submitted value) is cleared by the parent's
+  // onTypeChange handler. Adjusting state during render (rather than in an effect) per
+  // React's own guidance for "reset state when a prop changes" — avoids the extra render
+  // pass an effect would cost.
+  const [prevType, setPrevType] = useState(type);
+  if (type !== prevType) {
+    setPrevType(type);
+    setFileInfo(null);
+    setUploadStatus("");
+    setUploadError("");
+  }
 
   function handleKey(e) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit();
@@ -62,14 +103,9 @@ export default function InputForm({
     return text.trim();
   }
 
-  async function handleFileChange(event) {
-    const file = event.target.files?.[0];
+  async function processFile(file) {
     setUploadStatus("");
     setUploadError("");
-
-    if (!file) {
-      return;
-    }
 
     const fileName = file.name;
     const isPdf = fileName.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
@@ -89,389 +125,231 @@ export default function InputForm({
         return;
       }
 
-      setPastedText(trimmedText);
       onUrlChange(trimmedText);
+      setFileInfo({ name: fileName, chars: trimmedText.length });
       setUploadStatus(`extracted ${trimmedText.length} characters from ${fileName}`);
     } catch {
       setUploadError(`Couldn't read "${fileName}" — try a different file, or paste the text instead.`);
     }
   }
 
+  function handleFileInputChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) processFile(file);
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file) processFile(file);
+  }
+
+  function handleDropZoneKeyDown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInputRef.current?.click();
+    }
+  }
+
   return (
-    <div className="w-full flex flex-col gap-8">
-      <div className="flex flex-col gap-3">
-        <label
-          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Profile Type
-        </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {profileTypes.map(({ value, label }) => {
-            const selected = type === value;
-
+    <div className="w-full flex flex-col">
+      {/* 4. Source row */}
+      <section className="row">
+        <div className="row-label">Source</div>
+        <div className="source-grid">
+          {visibleTypes.map((t) => {
+            const selected = type === t.value;
             return (
               <button
-                key={value}
-                onClick={() => onTypeChange(value)}
-                disabled={loading}
-                style={{
-                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
-                  color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
-                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
-                  borderWidth: "1px",
-                  borderLeftWidth: "2px",
-                  opacity: loading ? 0.5 : 1,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  borderRadius: "2px",
-                  fontFamily: "'Courier New', monospace",
-                }}
-                className="flex min-h-16 items-center px-4 py-4 text-left text-sm uppercase tracking-[0.2em] transition-colors duration-200"
-                onMouseEnter={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
-                    e.currentTarget.style.color = "var(--color-accent)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
-                    e.currentTarget.style.color = "var(--color-text-secondary)";
-                  }
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <label
-          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          {type === "resume" ? "Resume Text" : type === "linkedin" ? "LinkedIn Profile Text" : "Profile URL"}
-        </label>
-        {isUploadType ? (
-          <div className="flex flex-col gap-3">
-            {type === "linkedin" && (
-              <p
-                className="text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
-              >
-                Open your LinkedIn profile → More → Save to PDF, then upload it here.
-              </p>
-            )}
-            <input
-              type="file"
-              accept=".pdf,.txt,application/pdf,text/plain"
-              onChange={handleFileChange}
-              disabled={loading}
-              className="w-full text-sm text-[var(--color-text-secondary)] file:mr-4 file:cursor-pointer file:border-0 file:bg-[var(--color-bg-surface)] file:px-4 file:py-3 file:text-sm file:font-bold file:uppercase file:tracking-[0.2em] file:text-[var(--color-text-primary)]"
-              style={{
-                borderBottom: "1px solid var(--color-border)",
-                paddingBottom: "1rem",
-                fontFamily: "'Courier New', monospace",
-              }}
-            />
-            <textarea
-              style={{
-                backgroundColor: "var(--color-bg-primary)",
-                borderColor: "var(--color-border)",
-                borderBottomColor: "var(--color-border)",
-                borderLeftWidth: 0,
-                borderRightWidth: 0,
-                borderTopWidth: 0,
-                borderBottomWidth: "1px",
-                color: "var(--color-text-primary)",
-                fontFamily: "'Courier New', monospace",
-                borderRadius: "0px",
-              }}
-              className="w-full min-h-44 px-0 py-5 text-sm leading-7 focus:outline-none focus:shadow-none transition-colors duration-200 resize-y"
-              placeholder={type === "resume" ? "or paste resume text here" : "or paste profile text here"}
-              value={pastedText}
-              onChange={(e) => {
-                setPastedText(e.target.value);
-                setUploadError("");
-                onUrlChange(e.target.value);
-              }}
-              onKeyDown={handleKey}
-              disabled={loading}
-              onFocus={(e) => {
-                e.target.style.borderBottomColor = "var(--color-accent)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderBottomColor = "var(--color-border)";
-              }}
-            />
-            {uploadError ? (
-              <p
-                className="text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "var(--color-accent)", fontFamily: "'Courier New', monospace" }}
-              >
-                {uploadError}
-              </p>
-            ) : uploadStatus ? (
-              <p
-                className="text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
-              >
-                {uploadStatus}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <input
-            type="url"
-            style={{
-              backgroundColor: "var(--color-bg-primary)",
-              borderColor: "var(--color-border)",
-              borderBottomColor: "var(--color-border)",
-              borderLeftWidth: 0,
-              borderRightWidth: 0,
-              borderTopWidth: 0,
-              borderBottomWidth: "1px",
-              color: "var(--color-text-primary)",
-              fontFamily: "'Courier New', monospace",
-              borderRadius: "0px",
-            }}
-            className="w-full px-0 py-5 text-sm focus:outline-none focus:shadow-none transition-colors duration-200"
-            placeholder={type === "instagram" ? "https://instagram.com/username" : "https://github.com/username"}
-            value={url}
-            onChange={(e) => onUrlChange(e.target.value)}
-            onKeyDown={handleKey}
-            disabled={loading}
-            onFocus={(e) => {
-              e.target.style.borderBottomColor = "var(--color-accent)";
-            }}
-            onBlur={(e) => {
-              e.target.style.borderBottomColor = "var(--color-border)";
-            }}
-          />
-        )}
-        <style>{`
-          input::placeholder,
-          textarea::placeholder {
-            color: var(--color-text-secondary);
-          }
-        `}</style>
-      </div>
-
-      <button
-        onClick={onSubmit}
-        disabled={loading || !url.trim()}
-        style={{
-          backgroundColor: loading || !url.trim() ? "var(--color-border)" : "var(--color-accent)",
-          color: loading || !url.trim() ? "var(--color-text-secondary)" : "var(--color-bg-primary)",
-          opacity: loading || !url.trim() ? 0.5 : 1,
-          cursor: loading || !url.trim() ? "not-allowed" : "pointer",
-          fontFamily: "'Courier New', monospace",
-          borderRadius: "2px",
-        }}
-        className="w-full py-4 font-bold text-sm uppercase tracking-[0.15em] transition-all duration-200 active:scale-[0.99]"
-        onMouseEnter={(e) => {
-          if (!loading && url.trim()) {
-            e.currentTarget.style.backgroundColor = "var(--color-accent-hover)";
-            e.currentTarget.style.filter = "brightness(1.03)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!loading && url.trim()) {
-            e.target.style.backgroundColor = "var(--color-accent)";
-            e.currentTarget.style.filter = "brightness(1)";
-          }
-        }}
-      >
-        {loading ? (
-          <span className="flex items-center justify-center gap-3">
-            <span
-              className="inline-block w-4 h-4 animate-spin"
-              style={{
-                borderWidth: "1px",
-                borderColor: "var(--color-text-secondary)",
-                borderTopColor: "var(--color-text-primary)",
-                borderRadius: "2px",
-              }}
-            />
-            roasting profile
-          </span>
-        ) : (
-          "roast this profile"
-        )}
-      </button>
-
-      <div className="flex flex-col gap-3">
-        <label
-          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Severity
-        </label>
-        <div className="grid grid-cols-3 gap-3">
-          {severities.map((value) => {
-            const selected = severity === value;
-
-            return (
-              <button
-                key={value}
+                key={t.value}
                 type="button"
-                onClick={() => onSeverityChange(value)}
+                className={`source-card${selected ? " is-selected" : ""}`}
                 disabled={loading}
-                style={{
-                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
-                  color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
-                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
-                  borderWidth: "1px",
-                  borderLeftWidth: "2px",
-                  opacity: loading ? 0.5 : 1,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  borderRadius: "2px",
-                  fontFamily: "'Courier New', monospace",
-                }}
-                className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
-                onMouseEnter={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
-                    e.currentTarget.style.color = "var(--color-accent)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
-                    e.currentTarget.style.color = "var(--color-text-secondary)";
-                  }
-                }}
+                onClick={() => onTypeChange(t.value)}
               >
-                {value}
+                <span className="source-card-bar" />
+                <span className="source-card-meta">
+                  <span className="source-card-index">{t.index}</span>
+                  <span className="source-card-kind">{t.kind}</span>
+                </span>
+                <span className="source-card-name">{t.name}</span>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      <div className="flex flex-col gap-3">
-        <label
-          className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Persona
-        </label>
-        <div className="grid grid-cols-1 gap-3">
-          {PERSONAS.map(({ value, name, tagline }) => {
-            const selected = persona === value;
+      {/* 5. Input row */}
+      <section className="row">
+        <div className="row-label">{active.label}</div>
+        <div>
+          {!isUploadType && (
+            <div className="link-row">
+              <span className="link-chevron">&#8250;</span>
+              <input
+                type="text"
+                className="link-input"
+                value={url}
+                onChange={(e) => onUrlChange(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder={active.placeholder}
+                disabled={loading}
+              />
+              <span className="cmd-hint">cmd + enter</span>
+            </div>
+          )}
 
+          {isUploadType && (
+            <div className="file-body">
+              <div className="file-hint">
+                <span className="file-hint-chevron">&#8250;</span>
+                <span>{active.hint}</span>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,application/pdf,text/plain"
+                onChange={handleFileInputChange}
+                disabled={loading}
+                className="hidden"
+              />
+
+              {!fileInfo && (
+                <div
+                  className={`drop${dragging ? " is-dragging" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={handleDropZoneKeyDown}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (!dragging) setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={handleDrop}
+                >
+                  <span className="drop-arrow">&#8595;</span>
+                  <span className="drop-label">{dragging ? "release to read it" : active.dropLabel}</span>
+                  <span className="drop-browse">click to browse</span>
+                </div>
+              )}
+
+              {fileInfo && (
+                <div className="file-row">
+                  <span className="file-check">&#10003;</span>
+                  <span className="file-name">{fileInfo.name}</span>
+                  <span className="file-chars">{fileInfo.chars.toLocaleString()} chars extracted</span>
+                  <button
+                    type="button"
+                    className="file-replace"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFileInfo(null);
+                      setUploadStatus("");
+                    }}
+                  >
+                    replace
+                  </button>
+                </div>
+              )}
+
+              <div className="paste-divider">
+                <span className="paste-divider-label">or paste the text</span>
+                <span className="paste-divider-rule" />
+              </div>
+              <textarea
+                className="paste-area"
+                value={url}
+                onChange={(e) => onUrlChange(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder={active.pastePlaceholder}
+                disabled={loading}
+              />
+
+              {uploadError ? (
+                <p className="upload-error">{uploadError}</p>
+              ) : uploadStatus ? (
+                <p className="upload-error" style={{ color: "var(--ink-2)" }}>
+                  {uploadStatus}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* 6. Voice row — persona + severity */}
+      <section className="voice">
+        <div className="row-label">Voice</div>
+        <div className="persona-col">
+          <div className="voice-header">Persona</div>
+          {PERSONAS.map((p, i) => {
+            const selected = persona === p.value;
             return (
               <button
-                key={value}
+                key={p.value}
                 type="button"
-                onClick={() => onPersonaChange(value)}
+                className={`stack-cell${selected ? " is-selected" : ""}`}
                 disabled={loading}
-                style={{
-                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
-                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
-                  borderWidth: "1px",
-                  borderLeftWidth: "2px",
-                  opacity: loading ? 0.5 : 1,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  borderRadius: "2px",
-                }}
-                className="flex flex-col items-start gap-1 px-4 py-3 text-left transition-colors duration-200"
-                onMouseEnter={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
-                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
-                  }
-                }}
+                onClick={() => onPersonaChange(p.value)}
               >
-                <span
-                  className="text-sm font-bold uppercase tracking-[0.15em]"
-                  style={{ color: selected ? "var(--color-accent)" : "var(--color-text-primary)", fontFamily: "'Courier New', monospace" }}
-                >
-                  {name}
+                <span className="stack-cell-bar" />
+                <span className="persona-cell-top">
+                  <span className="persona-cell-index">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="persona-cell-name">{p.name}</span>
                 </span>
-                <span
-                  className="text-xs"
-                  style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
-                >
-                  {tagline}
-                </span>
+                <span className="persona-cell-note">{p.tagline}</span>
               </button>
             );
           })}
         </div>
-      </div>
+        <div className="severity-col">
+          <div className="voice-header">Severity</div>
+          {SEVERITIES.map((sv) => {
+            const selected = severity === sv.value;
+            return (
+              <button
+                key={sv.value}
+                type="button"
+                className={`stack-cell${selected ? " is-selected" : ""}`}
+                disabled={loading}
+                onClick={() => onSeverityChange(sv.value)}
+              >
+                <span className="stack-cell-bar" />
+                <span className="severity-cell-name">{sv.value}</span>
+                <span className="severity-cell-note">{sv.note}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {import.meta.env.DEV && (
-        <div className="flex flex-col gap-3">
-          <label
-            className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Model (dev only)
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            {models.map(({ value, label }) => {
-              const selected = model === value;
-
+        <section className="row">
+          <div className="row-label">Model (dev)</div>
+          <div className="model-grid">
+            {MODELS.map((m) => {
+              const selected = model === m.value;
               return (
                 <button
-                  key={value}
+                  key={m.value}
                   type="button"
-                  onClick={() => onModelChange(value)}
+                  className={`source-card${selected ? " is-selected" : ""}`}
                   disabled={loading}
-                  style={{
-                    backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
-                    color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
-                    borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
-                    borderWidth: "1px",
-                    borderLeftWidth: "2px",
-                    opacity: loading ? 0.5 : 1,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    borderRadius: "2px",
-                    fontFamily: "'Courier New', monospace",
-                  }}
-                  className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
-                  onMouseEnter={(e) => {
-                    if (!loading && !selected) {
-                      e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
-                      e.currentTarget.style.borderLeftColor = "var(--color-accent)";
-                      e.currentTarget.style.color = "var(--color-accent)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!loading && !selected) {
-                      e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
-                      e.currentTarget.style.borderLeftColor = "var(--color-border)";
-                      e.currentTarget.style.color = "var(--color-text-secondary)";
-                    }
-                  }}
+                  onClick={() => onModelChange(m.value)}
+                  style={{ minHeight: "56px" }}
                 >
-                  {label}
+                  <span className="source-card-bar" />
+                  <span className="source-card-name">{m.label}</span>
                 </button>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
-
-      <p
-        className="text-center text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        cmd + enter to submit
-      </p>
     </div>
   );
 }

@@ -46,7 +46,8 @@ there too, or it won't be reachable via `npm run dev` (only via the deployed Ver
 from values like real `dotenv` does) — required vars: `GROQ_API_KEY`, `APIFY_API_TOKEN`,
 `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`; add `OPENAI_API_KEY` (or `VITE_OPENAI_API_KEY`)
 too if you want the dev-only GPT-4o comparison option to work locally (requires `NODE_ENV=development`
-— see "Model selection" below).
+— see "Model selection" below). `INSTAGRAM_ENABLED` is optional (defaults to enabled) — see the
+Instagram kill switch note under "Request flow" below.
 
 ### Linting
 `eslint.config.js` globally ignores `api/**` (and a nonexistent `roastify-backend/**`), so
@@ -76,7 +77,15 @@ map. It was ~935 lines holding four unrelated concerns before that split; it's ~
        list of actor-name candidates in sequence (actor slugs get renamed/deprecated on Apify, so
        this is resilience against that), then polls the run status, silently retrying a failed status
        check until the poll budget runs out (rather than failing the whole scrape on one flaky
-       check). `api/_lib/scrapers/instagram.js`.
+       check). `api/_lib/scrapers/instagram.js`. **Kill switch**: Instagram is the app's only
+       remaining scraping dependency, so it needs to be disposable without a deploy if the Apify
+       actor breaks — `isInstagramEnabled()` (`api/_lib/config.js`, `process.env.INSTAGRAM_ENABLED
+       !== "false"`, same boolean-string convention as `NODE_ENV === "development"`) is checked right
+       after the persona/type check, before rate limiting, and rejects a disabled Instagram request
+       with `SOURCE_UNAVAILABLE` (503) — see "Error handling" below. `api/rate-limit-status.js` also
+       reports `instagramEnabled` in every response shape (reusing the endpoint the frontend already
+       polls on page load rather than adding a new one), and `InputForm.jsx` hides the Instagram
+       source card when it's false.
    - **Uploaded** (`linkedin`, `resume`) — no scraping at all; the request body already carries the
      text, and the handler just passes it straight through as `profileData` (not cached — there's
      nothing to re-fetch). `InputForm.jsx` shows the same PDF-upload + paste-textarea UI for both
@@ -145,10 +154,11 @@ map. It was ~935 lines holding four unrelated concerns before that split; it's ~
 7. Every response — success, error JSON, or `error`/`complete` SSE frame — includes
    `rateLimit: { limit, remaining, reset }`. A successful `complete` event also includes `modelUsed`
    (the selected model's display label, dev-only display — see "Model selection" above) and `persona`
-   (the resolved persona id, e.g. `"cynic"` — always shown, it's a real production feature). `RoastCard.jsx`
-   shows persona always and `modelUsed` only in dev, both next to "roast output". See "Error handling"
-   below for what happens on any failure — there is no canned fallback roast anymore; every failure path
-   is a real, honest error.
+   (the resolved persona id, e.g. `"cynic"` — always shown, it's a real production feature). `App.jsx`
+   resolves it to a display name (`personaName()`) for the Output section's meta row; `RoastCard.jsx`
+   shows `modelUsed` only in dev, appended to the "Roast" gutter label. See "Error handling" below for
+   what happens on any failure — there is no canned fallback roast anymore; every failure path is a
+   real, honest error.
 8. `_debug_scraped_data` / `_debug_scraped_raw` (the raw scrape payload) are only attached to the
    `complete` event when `NODE_ENV === "development"`.
 
@@ -171,6 +181,9 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
   so they only ever hit `MISSING_INPUT`, see below): 400 `SCRAPE_INVALID_INPUT` (bad URL/username), 404
   `SCRAPE_NOT_FOUND` (user/profile doesn't exist or isn't public), 502 `SCRAPE_UPSTREAM_FAILURE`
   (GitHub/Apify itself failed), 504 `SCRAPE_TIMEOUT` (Instagram's Apify poll ran out of attempts).
+  503 `SOURCE_UNAVAILABLE` is a separate case, not a scrape failure — it fires before any scrape is
+  attempted, when `type === "instagram"` and the `INSTAGRAM_ENABLED` kill switch (see "Request flow"
+  above) is off.
 - **`MISSING_INPUT`** (400): the request body's `url` field (which, for `linkedin`/`resume`, actually
   holds pasted-or-PDF-extracted text) is empty *or whitespace-only* — the trim check is the
   server-side backstop for a failed/empty client-side PDF extraction, in case `InputForm.jsx`'s own
@@ -195,11 +208,14 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
   `LLM_INVALID_FORMAT` additionally get `bufferPreview` (the raw model output, truncated to 2000
   chars) — this is the real-world signal for how often prompt-only JSON enforcement (see "Model
   selection" above) actually fails; grep logs for those two codes if reliability needs re-checking.
-- **Client**: `retryable` drives the UI in `App.jsx` — a `true` value shows a "try again" button next
-  to the error message (just re-invokes `handleSubmit`); `false` doesn't. Rate-limit errors (429) are
-  deliberately `retryable: false` even though the request would eventually succeed — retrying
-  immediately would just 429 again, and the countdown in `rateLimitStatus` already tells the user when
-  to come back, so a generic "try again now" affordance would be misleading there.
+- **Client**: `retryable` flows through `App.jsx`'s `describeError()` into the Output error state's
+  `error.retryable` — a `true` value renders a "try again" button (`RoastCard.jsx`, calls `onRetry`,
+  which `App.jsx` wires straight to `handleSubmit`); `false` omits the button entirely, per the
+  design's own instruction ("where nothing can be retried, omit the button; the detail line carries
+  the resolution"). Rate-limit errors (429) are deliberately `retryable: false` even though the
+  request would eventually succeed — retrying immediately would just 429 again, and the error's own
+  detail line already carries a real countdown (see "Frontend structure" below), so a generic "try
+  again now" affordance would be misleading there.
 
 ### Prompt layer & personas
 `getSystemPrompt(type, severity, personaId)` (in `api/_lib/prompts/index.js`, re-exported from
@@ -330,25 +346,65 @@ and fixed it. `createRatelimit()` builds an Upstash Redis sliding-window limiter
   `api/_lib/scrapeCache.test.js`.
 
 ### Frontend structure
-- `src/App.jsx` — all top-level state (`url`, `type`, `severity`, `persona`, `model`, `result`,
-  `loading`, `error`, `rateLimitStatus`) and orchestration. Single page, no router.
-- `src/components/InputForm.jsx` — profile-type picker; a URL input for `github`/`instagram`, or a
-  shared upload UI (file input + paste textarea, `isUploadType = type === "resume" || type ===
-  "linkedin"`) for `linkedin`/`resume` — both extract text the same way (`extractPdfText()` via
-  `pdfjs-dist` for a PDF, `file.text()` for `.txt`, or manual paste), sharing one `pastedText` state
-  and one `handleFileChange()`. `linkedin` additionally shows a one-line hint above the upload
-  ("Open your LinkedIn profile → More → Save to PDF, then upload it here.") since users won't know
-  that export path exists. Extraction failures (unreadable file, wrong file type, or a PDF with no
-  extractable text) set an `uploadError` string shown in place of the status line — previously a
-  failed extraction failed silently in a bare `catch {}`, leaving the user staring at nothing having
-  happened. Also has a severity picker, a persona picker (always visible — real production feature, values from
-  `src/lib/personas.js`'s `PERSONAS`, shows name + tagline per option), and a model picker (values
-  must match `MODEL_OPTIONS` keys in `api/roast.js`) that only renders when `import.meta.env.DEV` —
-  production users never see the model picker (see "Model selection" above), but do see the persona
-  picker.
-- `src/components/RoastCard.jsx` — renders the roast, an interactive tip checklist, share
-  (`navigator.share` with clipboard-copy fallback), and save-as-image (`html2canvas`). Shows
-  `personaName` next to "roast output" always; `modelUsed` only in dev.
+Redesigned 2026-08-21 from a Claude Design handoff (full-bleed modular grid, a persistent left label
+gutter, hard rules, display-scale type — see WORK_LOG.md for the session). Same state, same API
+contract; only the presentation layer and the CSS approach changed. **Component boundaries now match
+the design's own file-mapping table**, not the old card-based layout's boundaries:
+
+- `src/App.jsx` — owns all top-level state (`url`, `type`, `severity`, `persona`, `model`, `result`,
+  `loading`, `error`, `rateLimitStatus`, `resetKey`) and renders the header bar, hero, the
+  how-it-works strip, `<InputForm>`, the submit button + progress rule + rate-limit strip (moved here
+  from `InputForm` — see below), `<RoastCard>` for the Output section, and the footer. Single page,
+  no router. `status` (`"idle" | "streaming" | "error" | "complete"`) is derived, not stored, straight
+  from `loading`/`error`/`result` and passed to `RoastCard`. `describeError(err, { type })` turns a
+  thrown error into the `{ message, detail, retryable }` shape the Output error state renders —
+  `detail` is synthesized from real data only, never fabricated: a `RATE_LIMITED` error gets a real
+  countdown from `err.rateLimit.reset` (attached to the error itself, not the possibly-stale
+  `rateLimitStatus` state), a scrape-family error names the source type that was checked (never the
+  raw submitted text, which could be pasted resume/profile content), everything else falls back to a
+  plain `err_{code}` machine string. "Roast another" (`handleRoastAnother`) clears `result`/`error`/
+  `url` and bumps `resetKey`, which is passed to `<InputForm key={resetKey}>` — remounting it clears
+  its own local upload state (file confirmation, upload status/error) for free, rather than lifting
+  that presentation-only state up into `App.jsx`.
+- `src/components/InputForm.jsx` — the source row (4 cards, ordered `github → instagram → linkedin →
+  resume` so the two URL sources are adjacent and the two PDF sources are adjacent — hidden down to 3
+  when `instagramEnabled` is false, the Instagram kill switch's frontend half, see "Request flow"
+  above), the input row (a URL field for `github`/`instagram`, or a shared upload UI for
+  `linkedin`/`resume` — `isUploadType = active.kind === "pdf"`), and the voice row (persona +
+  severity, two stacked-cell columns sharing one gutter label). No longer renders its own submit
+  button — that moved to `App.jsx` (see above); still owns `Cmd/Ctrl+Enter` handling in its own
+  fields via an `onSubmit` prop. The upload UI supports both click-to-browse (a hidden
+  `<input type=file>` triggered via a ref) and real HTML5 drag-and-drop onto the drop zone — both
+  paths funnel through one shared `processFile(file)` (extraction via `extractPdfText()` /
+  `pdfjs-dist` for a PDF, `file.text()` for `.txt`) rather than duplicating the validation/extraction
+  logic per entry point. `linkedin` shows a one-line hint above the upload ("Open your LinkedIn
+  profile → More → Save to PDF, then upload it here."). Extraction failures (unreadable file, wrong
+  file type, or a PDF with no extractable text) set an `uploadError` string shown in place of the
+  status line — previously a failed extraction failed silently in a bare `catch {}`. Local state
+  (`fileInfo`, `uploadStatus`, `uploadError`, `dragging`) resets when `type` changes, via the "adjust
+  state during render" pattern (compare against a `prevType` ref-like state var, not a `useEffect` —
+  React's own lint rule flags a synchronous `setState` inside an effect body as an avoidable extra
+  render pass) rather than an effect. Also has a severity picker and a persona picker (both real
+  production features, values from `src/lib/personas.js`'s `PERSONAS` for persona — never hardcoded
+  in the component, per the redesign's explicit requirement), and a model picker (values must match
+  `MODEL_OPTIONS` keys in `api/roast.js`) that only renders when `import.meta.env.DEV` — the redesign
+  has no slot for it (no model name ever appears in the production design), so it's appended as one
+  more gutter row, invisible outside dev.
+- `src/components/RoastCard.jsx` — owns all four Output states from the design (idle / streaming /
+  error / complete), exactly one renders at a time, driven by the `status` prop from `App.jsx`.
+  Streaming shows a stage label derived from **real stream lifecycle**, not a timer: no roast text
+  has arrived yet (`"reading profile…"`) vs. tokens are actively arriving (`"printing…"`) — the
+  design's own prototype drives this with a fake `setInterval` cycling through GitHub-flavored
+  copy ("counting abandoned repos…"), which was deliberately not ported; a timer-based rotation would
+  misrepresent what's actually happening and the GitHub-specific phrase would read as a bug on a
+  non-GitHub roast. Complete shows the roast, a meta row (source/persona-name/severity/tip-count),
+  and the interactive tip checklist (a real `<input type="checkbox">`, visually hidden, for
+  keyboard/screen-reader support, same technique as before — the checked glyph is now the literal
+  `✓` text character per the design's "no icon fonts, no SVG" rule, replacing the old inline SVG
+  checkmark) plus share (`navigator.share` with clipboard-copy fallback), save-as-image
+  (`html2canvas`), and "roast another" actions. `checked` resets whenever the `tips` array reference
+  changes (same render-time-adjustment pattern as `InputForm`'s upload state, not an effect) so a
+  fresh roast never carries over which boxes were ticked on the last one.
 - `src/lib/personas.js` — frontend mirror of `api/_lib/prompts/personas.js`'s registry
   (`{ value, name, tagline }` per persona, kept in sync manually rather than cross-imported across the
   frontend/backend boundary — same pattern `InputForm.jsx`'s `models` array uses for `MODEL_OPTIONS`).
@@ -356,34 +412,40 @@ and fixed it. `createRatelimit()` builds an Upstash Redis sliding-window limiter
   display string for `RoastCard`.
 - `src/lib/openai.js` — thin fetch wrappers (`getRoast`, `getRateLimitStatus`) against `/api/roast`
   and `/api/rate-limit-status`. Despite the filename, no OpenAI SDK code runs client-side. `getRoast`
-  now takes `(url, type, severity, model, persona, { onRoastChunk })` — `persona` is always sent when
+  takes `(url, type, severity, model, persona, { onRoastChunk })` — `persona` is always sent when
   provided (unlike `model`, which is dev-only-conditional; see "Model selection" above). It branches
   on the response's `Content-Type`: a plain JSON response (scrape failure, missing-input, 429,
-  missing-key, LLM-setup, or persona/type-mismatch error — see "Error handling" above) has its
-  `{ error: {...} }` envelope turned into a thrown `Error` via `errorFromEnvelope()` (also imported by
-  `App.jsx` indirectly through the errors it catches); an SSE response is read by hand via
-  `res.body.getReader()` (the browser's `EventSource` only supports `GET`, so it can't be used for a
-  `POST`-triggered stream) — each `roast` frame invokes the caller-supplied `onRoastChunk(text)`, an
-  `error` frame throws the same envelope-derived `Error` (ending the stream), and the `complete`
-  frame's data becomes the resolved return value. Every thrown error carries `.message`, `.code`,
-  `.retryable`, and `.rateLimit`. `App.jsx`'s `handleSubmit` passes an `onRoastChunk` that
-  live-updates `result.roast` (with `tips` kept at `[]` until the real end), so `RoastCard` visibly
-  fills in while `loading` is still `true`; on any thrown error it clears `result`, shows
-  `err.message` directly, and renders a "try again" button only when `err.retryable` is true
-  (re-invokes `handleSubmit`).
-- Styling is Tailwind v4 (`@tailwindcss/vite`), but most components use inline `style={{}}` objects
-  for color/font rather than Tailwind utility classes — follow that existing pattern rather than
-  introducing Tailwind color classes. Colors themselves are CSS custom properties defined once in
-  `src/index.css`'s `:root` (`--color-bg-primary`, `--color-bg-surface`, `--color-bg-hover`,
-  `--color-bg-tertiary`, `--color-text-primary`, `--color-text-secondary`, `--color-text-muted`,
-  `--color-accent`, `--color-accent-hover`, `--color-border`, plus `--font-family`) — reference them as
-  `"var(--color-accent)"` etc, including inside imperative `element.style.x = "var(--color-accent)"`
-  hover-state assignments and inside Tailwind arbitrary-value brackets (`text-[var(--color-text-primary)]`
-  — Tailwind v4 compiles `var()` inside `[...]` straight through to real CSS). Do **not** hardcode a new
-  hex value inline; add or reuse a token instead. The one deliberate exception is
-  `RoastCard.jsx`'s `handleSaveAsImage()`, which passes a literal hex to `html2canvas`'s
-  `backgroundColor` option — that value becomes a canvas `fillStyle`, which does not resolve CSS custom
-  properties, so it can't reference a token and must be kept in sync with `--color-bg-surface` by hand.
+  missing-key, LLM-setup, source-unavailable, or persona/type-mismatch error — see "Error handling"
+  above) has its `{ error: {...} }` envelope turned into a thrown `Error` via `errorFromEnvelope()`;
+  an SSE response is read by hand via `res.body.getReader()` (the browser's `EventSource` only
+  supports `GET`, so it can't be used for a `POST`-triggered stream) — each `roast` frame invokes the
+  caller-supplied `onRoastChunk(text)`, an `error` frame throws the same envelope-derived `Error`
+  (ending the stream), and the `complete` frame's data becomes the resolved return value. Every
+  thrown error carries `.message`, `.code`, `.retryable`, and `.rateLimit` — `App.jsx`'s
+  `describeError()` (see above) reads all four.
+
+**Styling — a real convention shift, not an incremental extension.** The old card-based design used
+Tailwind utility classes for layout plus inline `style={{}}` objects for color, referencing CSS custom
+properties. The redesign's own handoff README is explicit that the implementer should "write ordinary
+classes and ordinary media queries" — dozens of `nth-child`/`:empty`/explicit-grid-placement rules
+across four breakpoints are what the design actually needs, and are unreadable as Tailwind arbitrary-
+variant chains. So the redesigned surface is now **plain CSS classes with real `@media` queries, all
+in `src/index.css`** (still the one global stylesheet — no CSS-in-JS, no second Tailwind config,
+Tailwind stays for small incidental utilities like the visually-hidden-checkbox technique). Class names
+follow the handoff's own `data-r="x"` → `.x` naming crib verbatim (`.row`, `.source-card`,
+`.stack-cell`, `.voice`, `.submit`, `.fix-row`, etc.) so the CSS and the original design doc read
+side by side. Colors are still CSS custom properties, extended (not replaced) in `:root`: `--ground`
+through `--ground-5`, `--accent`/`--accent-dk`, `--ink` through `--ink-4`, `--rule`/`--rule-2` (the
+old `--color-*` set was fully superseded and removed — confirmed via a repo-wide grep that nothing
+still referenced it before deleting). Do **not** hardcode a new hex value inline; add or reuse a
+token instead. The one deliberate exception is `RoastCard.jsx`'s `handleSaveAsImage()`, which passes
+a literal hex (`#0a0a0a`, matching `--ground-2`) to `html2canvas`'s `backgroundColor` option — that
+value becomes a canvas `fillStyle`, which does not resolve CSS custom properties, so it can't
+reference a token and must be kept in sync by hand. Breakpoints are 1180px (type scales down only),
+900px (multi-column layouts collapse to 2-up or stack), 600px (the gutter grid itself collapses —
+every `.row`'s left label becomes a full-width row above its content instead of a column beside it),
+and 380px (a handful of small corrections). See the handoff's own README (not part of this repo) for
+the full rationale per breakpoint if tuning any of this further.
 
 ### Deployment
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining

@@ -1,17 +1,37 @@
 import { useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
-export default function RoastCard({ roast, tips, modelUsed, personaName }) {
+// Owns all four Output states from the design — idle / streaming / error / complete —
+// exactly one renders at a time, matching the handoff's own component-mapping table.
+export default function RoastCard({
+  status,
+  roast,
+  tips,
+  error,
+  type,
+  severity,
+  personaName,
+  modelUsed,
+  onRetry,
+  onRoastAnother,
+}) {
   const [checked, setChecked] = useState([]);
-  const [hoveredTip, setHoveredTip] = useState(null);
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const cardRef = useRef();
 
+  // A fresh roast (including the empty tips array right after "roast another") should
+  // never carry over which boxes were ticked on the previous one. Adjusting state during
+  // render (rather than in an effect) per React's own guidance for "reset state when a
+  // prop changes" — avoids the extra render pass an effect would cost.
+  const [prevTips, setPrevTips] = useState(tips);
+  if (tips !== prevTips) {
+    setPrevTips(tips);
+    setChecked([]);
+  }
+
   function toggle(i) {
-    setChecked((prev) =>
-      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
-    );
+    setChecked((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
   }
 
   async function handleShare() {
@@ -44,8 +64,8 @@ get roasted at roastify.vercel.app`;
       const canvas = await html2canvas(cardRef.current, {
         // html2canvas passes this straight to a canvas fillStyle, which doesn't resolve
         // CSS custom properties — must stay a literal hex, unlike every other color in
-        // this file (kept in sync with --color-bg-surface in src/index.css).
-        backgroundColor: "#0e0e0e",
+        // this file (kept in sync with --ground-2 in src/index.css).
+        backgroundColor: "#0a0a0a",
         scale: 2,
       });
       const link = document.createElement("a");
@@ -57,170 +77,133 @@ get roasted at roastify.vercel.app`;
     }
   }
 
+  if (status === "idle") {
+    return (
+      <section className="row">
+        <div className="row-label">Output</div>
+        <div className="idle-body">
+          <span className="idle-label">awaiting input</span>
+          <span className="idle-cursor" />
+        </div>
+      </section>
+    );
+  }
+
+  if (status === "streaming") {
+    // Two real lifecycle states, not a timer: no roast text has arrived yet vs. tokens
+    // are actively streaming in. No fake "stages" tied to a fixed clock or to GitHub-
+    // specific flavor text — that would misrepresent what's actually happening, and
+    // would read as a bug on a non-GitHub roast.
+    const streamStage = roast.length === 0 ? "reading profile…" : "printing…";
+    return (
+      <section className="row">
+        <div className="row-label row-label--accent">Generating</div>
+        <div className="out-body">
+          <div className="stream-line">
+            <span className="stream-line-label">{streamStage}</span>
+            <span className="stream-spacer" />
+            <span>{roast.length} chars</span>
+          </div>
+          <p className="stream-text">
+            {roast}
+            <span className="caret" />
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <section className="row error-enter">
+        <div className="row-label row-label--accent">Error</div>
+        <div className="error-body">
+          <div className="error-top">
+            <span className="error-icon">!</span>
+            <span className="error-msg">{error.message}</span>
+          </div>
+          <span className="error-detail">{error.detail}</span>
+          {error.retryable && (
+            <button type="button" className="retry" onClick={onRetry}>
+              <span>try again</span>
+              <span>&#8594;</span>
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <div className="w-full flex flex-col gap-8 animate-fade-in">
-      <div ref={cardRef} className="w-full flex flex-col gap-8">
-        <div
-          className="relative border p-6"
-          style={{
-            borderColor: "var(--color-border)",
-            backgroundColor: "var(--color-bg-surface)",
-            borderRadius: "2px",
-          }}
-        >
-          <div
-            className="mb-5 inline-flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.2em]"
-            style={{
-              color: "var(--color-text-secondary)",
-              fontFamily: "'Courier New', monospace",
-            }}
-          >
-            <span
-              className="inline-block h-3 w-3"
-              style={{ backgroundColor: "var(--color-accent)", borderRadius: "2px" }}
-            />
-            roast output
-            {personaName && <span style={{ color: "var(--color-text-muted)" }}>· {personaName}</span>}
-            {import.meta.env.DEV && modelUsed && <span style={{ color: "var(--color-text-muted)" }}>· {modelUsed}</span>}
+    <div className="result-enter">
+      <div ref={cardRef}>
+        <section className="row row--thin">
+          <div className="row-label row-label--accent">
+            Roast{import.meta.env.DEV && modelUsed ? ` · ${modelUsed}` : ""}
           </div>
-          <div
-            className="border-l-2 pl-4"
-            style={{ borderLeftColor: "var(--color-accent)" }}
-          >
-            <p
-              className="text-base sm:text-lg leading-8"
-              style={{
-                color: "var(--color-text-primary)",
-                fontFamily: "'Courier New', monospace",
-              }}
-            >
-              {roast}
-            </p>
+          <div className="out-body">
+            <p className="roast-body">{roast}</p>
           </div>
-        </div>
+        </section>
 
-        <div
-          className="border p-6 flex flex-col gap-4"
-          style={{
-            borderColor: "var(--color-border)",
-            backgroundColor: "var(--color-bg-surface)",
-            borderRadius: "2px",
-          }}
-        >
-          <h3
-            className="text-[10px] font-bold uppercase tracking-[0.2em]"
-            style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
-          >
-            Survival Tips
-          </h3>
-          {tips.map((tip, i) => (
-            <label
-              key={i}
-              className="flex items-start gap-4 cursor-pointer group py-1"
-            >
-              <span className="relative mt-0.5 shrink-0 w-4 h-4">
-                <input
-                  type="checkbox"
-                  checked={checked.includes(i)}
-                  onChange={() => toggle(i)}
-                  onMouseEnter={() => setHoveredTip(i)}
-                  onMouseLeave={() => setHoveredTip((prev) => (prev === i ? null : prev))}
-                  className="absolute inset-0 w-4 h-4 cursor-pointer opacity-0"
-                />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none flex w-4 h-4 items-center justify-center border transition-colors duration-150"
-                  style={{
-                    backgroundColor: checked.includes(i) ? "var(--color-accent)" : "transparent",
-                    borderColor: checked.includes(i) || hoveredTip === i ? "var(--color-accent)" : "var(--color-text-secondary)",
-                    borderRadius: "2px",
-                  }}
-                >
-                  {checked.includes(i) && (
-                    <svg
-                      className="w-2.5 h-2.5"
-                      fill="none"
-                      viewBox="0 0 12 12"
-                      style={{ color: "var(--color-bg-primary)" }}
-                    >
-                      <path
-                        d="M2 6l3 3 5-5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </span>
-              </span>
-              <span
-                className="text-sm leading-7 transition-colors duration-150"
-                style={{
-                  color: checked.includes(i) ? "var(--color-text-secondary)" : "var(--color-text-primary)",
-                  textDecoration: checked.includes(i) ? "line-through" : "none",
-                  fontFamily: "'Courier New', monospace",
-                }}
-              >
-                {tip}
-              </span>
-            </label>
-          ))}
-        </div>
+        <section className="row meta-row">
+          <div className="row-label" />
+          <div className="meta-grid">
+            <div className="meta-cell">Source · {type}</div>
+            <div className="meta-cell">Voice · {personaName}</div>
+            <div className="meta-cell">Pain · {severity}</div>
+            <div className="meta-cell">Fixes · {tips.length}</div>
+          </div>
+        </section>
+
+        <section className="row">
+          <div className="row-label fixes-label">
+            Fixes<br className="fixes-label-break" />
+            <span className="fixes-label-count">
+              {checked.length}/{tips.length}
+            </span>
+          </div>
+          <div>
+            {tips.map((tip, i) => {
+              const isChecked = checked.includes(i);
+              return (
+                <label key={i} className={`fix-row${isChecked ? " is-checked" : ""}`}>
+                  <span className="fix-row-index">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="fix-row-checkbox">
+                    <input
+                      type="checkbox"
+                      className="absolute inset-0 w-4 h-4 cursor-pointer opacity-0"
+                      checked={isChecked}
+                      onChange={() => toggle(i)}
+                    />
+                    {isChecked && "✓"}
+                  </span>
+                  <span className="fix-row-text">{tip}</span>
+                </label>
+              );
+            })}
+          </div>
+        </section>
       </div>
 
-      <div className="w-full grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={handleShare}
-          className="w-full border px-4 py-4 text-sm font-bold uppercase tracking-[0.2em] transition-colors duration-200"
-          style={{
-            borderColor: "var(--color-border)",
-            backgroundColor: "transparent",
-            color: copied ? "var(--color-accent)" : "var(--color-text-secondary)",
-            borderRadius: "2px",
-            fontFamily: "'Courier New', monospace",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--color-accent)";
-            e.currentTarget.style.color = "var(--color-accent)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--color-border)";
-            e.currentTarget.style.color = copied ? "var(--color-accent)" : "var(--color-text-secondary)";
-          }}
-        >
-          {copied ? "copied." : "share roast"}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleSaveAsImage}
-          disabled={generating}
-          className="w-full border px-4 py-4 text-sm font-bold uppercase tracking-[0.2em] transition-colors duration-200"
-          style={{
-            borderColor: "var(--color-border)",
-            backgroundColor: "transparent",
-            color: generating ? "var(--color-accent)" : "var(--color-text-secondary)",
-            borderRadius: "2px",
-            fontFamily: "'Courier New', monospace",
-            opacity: generating ? 0.8 : 1,
-            cursor: generating ? "not-allowed" : "pointer",
-          }}
-          onMouseEnter={(e) => {
-            if (!generating) {
-              e.currentTarget.style.borderColor = "var(--color-accent)";
-              e.currentTarget.style.color = "var(--color-accent)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--color-border)";
-            e.currentTarget.style.color = generating ? "var(--color-accent)" : "var(--color-text-secondary)";
-          }}
-        >
-          {generating ? "generating..." : "save as image"}
-        </button>
-      </div>
+      <section className="row">
+        <div className="row-label" />
+        <div className="actions-grid">
+          <button
+            type="button"
+            className={`action-btn action-btn--share${copied ? " is-copied" : ""}`}
+            onClick={handleShare}
+          >
+            {copied ? "copied." : "share roast"}
+          </button>
+          <button type="button" className="action-btn" onClick={handleSaveAsImage} disabled={generating}>
+            {generating ? "generating..." : "save as image"}
+          </button>
+          <button type="button" className="action-btn" onClick={onRoastAnother}>
+            roast another
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

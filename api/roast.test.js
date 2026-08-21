@@ -436,3 +436,68 @@ describe("handler — rate limit dev bypass", () => {
     expect(createRatelimitMock).toHaveBeenCalled();
   });
 });
+
+describe("handler — Instagram kill switch", () => {
+  const originalInstagramEnabled = process.env.INSTAGRAM_ENABLED;
+
+  afterEach(() => {
+    if (originalInstagramEnabled === undefined) delete process.env.INSTAGRAM_ENABLED;
+    else process.env.INSTAGRAM_ENABLED = originalInstagramEnabled;
+  });
+
+  it("rejects an instagram request with SOURCE_UNAVAILABLE (503) when INSTAGRAM_ENABLED=false", async () => {
+    process.env.INSTAGRAM_ENABLED = "false";
+    createRatelimitMock.mockClear();
+    const req = {
+      method: "POST",
+      body: { url: "someone", type: "instagram" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      error: { code: ERROR_CODES.SOURCE_UNAVAILABLE, retryable: false },
+    });
+    // The check fires before any scrape or rate-limit consumption is attempted.
+    expect(createRatelimitMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reject an instagram request when INSTAGRAM_ENABLED is unset (default enabled)", async () => {
+    delete process.env.INSTAGRAM_ENABLED;
+    createRatelimitMock.mockClear();
+    // Invalid username fails synchronously inside extractInstagramUsername — proves the
+    // request passed the kill-switch check and reached real scrape validation instead of
+    // being rejected as unavailable.
+    const req = {
+      method: "POST",
+      body: { url: "not a valid username!!", type: "instagram" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.body.error.code).not.toBe(ERROR_CODES.SOURCE_UNAVAILABLE);
+    expect(createRatelimitMock).toHaveBeenCalled();
+  });
+
+  it("does not affect non-instagram types when INSTAGRAM_ENABLED=false", async () => {
+    process.env.INSTAGRAM_ENABLED = "false";
+    const req = {
+      method: "POST",
+      body: { url: "not a valid username!!", type: "github" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.body.error.code).toBe(ERROR_CODES.SCRAPE_INVALID_INPUT);
+  });
+});

@@ -1,19 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import InputForm from "./components/InputForm";
 import RoastCard from "./components/RoastCard";
 import { getRoast, getRateLimitStatus } from "./lib/openai";
 import { DEFAULT_PERSONA, personaName } from "./lib/personas";
-
-// linkedin no longer scrapes server-side at all (PDF upload instead, see api/roast.js) —
-// only instagram still goes through a slow Apify poll.
-const SLOW_SCRAPE_TYPES = new Set(["instagram"]);
-const SLOW_NOTICE_DELAY_MS = 5000;
 
 function formatCountdown(msRemaining) {
   const totalSeconds = Math.max(0, Math.ceil(msRemaining / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+// Turns a thrown error (see src/lib/openai.js's errorFromEnvelope) into the message/
+// detail/retryable shape the Output error state renders. `detail` is synthesized from
+// real data only — never fabricated: a rate-limit error gets a real countdown from the
+// error's own attached rateLimit snapshot; a scrape-family error names the source type
+// that was checked (never the raw submitted text — could be pasted resume/profile
+// content); everything else falls back to a plain machine code.
+function describeError(err, { type }) {
+  const codeSlug = (err.code || "unknown").toLowerCase();
+  let detail;
+  if (err.code === "RATE_LIMITED" && err.rateLimit?.reset) {
+    detail = `rate limit reached · resets in ${formatCountdown(err.rateLimit.reset - Date.now())} · err_${codeSlug}`;
+  } else if (err.code && err.code.startsWith("SCRAPE_")) {
+    detail = `checked ${type} · err_${codeSlug}`;
+  } else {
+    detail = `err_${codeSlug}`;
+  }
+  return { message: err.message, detail, retryable: Boolean(err.retryable) };
 }
 
 export default function App() {
@@ -25,40 +39,56 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [errorRetryable, setErrorRetryable] = useState(false);
-  const [showSlowNotice, setShowSlowNotice] = useState(false);
   const [rateLimitStatus, setRateLimitStatus] = useState(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [resetKey, setResetKey] = useState(0);
+  const outputRef = useRef(null);
+
+  const status = loading ? "streaming" : error ? "error" : result ? "complete" : "idle";
+  const instagramEnabled = rateLimitStatus?.instagramEnabled ?? true;
+  const rateLimit = { limit: rateLimitStatus?.limit ?? 5, remaining: rateLimitStatus?.remaining ?? 5 };
+  const disabled = !url.trim() || loading;
 
   useEffect(() => {
     getRateLimitStatus().then(setRateLimitStatus).catch(() => {});
   }, []);
 
+  // If Instagram gets disabled mid-session (the kill switch flips underneath a user who
+  // already had it selected), fall back to a source that's still available.
   useEffect(() => {
-    if (!loading || !SLOW_SCRAPE_TYPES.has(type)) {
-      return undefined;
+    if (!instagramEnabled && type === "instagram") {
+      setType("github");
+      setUrl("");
     }
+  }, [instagramEnabled, type]);
 
-    const timer = setTimeout(() => setShowSlowNotice(true), SLOW_NOTICE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [loading, type]);
+  function handleTypeChange(newType) {
+    setType(newType);
+    setUrl("");
+  }
 
-  useEffect(() => {
-    if (!rateLimitStatus || rateLimitStatus.remaining > 0 || !rateLimitStatus.reset) {
-      return undefined;
-    }
-
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [rateLimitStatus]);
+  function handleRoastAnother() {
+    setResult(null);
+    setError(null);
+    setUrl("");
+    // Remounts InputForm, clearing its local upload state (the file confirmation card,
+    // upload status/error) for free — see CLAUDE.md's "Frontend structure" for why that
+    // state stays local rather than living here.
+    setResetKey((k) => k + 1);
+  }
 
   async function handleSubmit() {
     if (!url.trim() || loading) return;
     setLoading(true);
     setError(null);
-    setErrorRetryable(false);
     setResult(null);
-    setShowSlowNotice(false);
+    // Streaming/error/complete all render inside the same Output section (RoastCard) —
+    // jump there immediately so the user watches the roast print instead of staring at
+    // an unchanged page below the fold. window.scrollTo (not element.scrollIntoView) —
+    // scrollIntoView's ancestor-walking behaved inconsistently in testing.
+    const outputTop = outputRef.current?.getBoundingClientRect().top;
+    if (outputTop !== undefined) {
+      window.scrollTo({ top: window.scrollY + outputTop, behavior: "smooth" });
+    }
     try {
       // Production users can't select a model (the picker only renders in dev — see
       // InputForm.jsx) — don't send a `model` field at all outside dev, so there's
@@ -70,139 +100,165 @@ export default function App() {
         onRoastChunk: (text) => setResult((prev) => ({ ...prev, roast: text, tips: prev?.tips || [] })),
       });
       setResult(data);
-      if (data.rateLimit) setRateLimitStatus(data.rateLimit);
+      // Merge, don't replace — data.rateLimit only ever carries limit/remaining/reset,
+      // never instagramEnabled (that's only in the page-load /api/rate-limit-status
+      // response), so a plain replace would silently un-hide a disabled Instagram card.
+      if (data.rateLimit) setRateLimitStatus((prev) => ({ ...prev, ...data.rateLimit }));
     } catch (err) {
-      // No canned roast on failure anymore (see api/roast.js) — show the real message,
-      // and clear any partial roast text a mid-stream failure may have already rendered
-      // so it doesn't linger next to the error.
+      // No canned roast on failure anymore (see api/roast.js) — show the real message.
       setResult(null);
-      setError(err.message ?? "Something went wrong.");
-      setErrorRetryable(Boolean(err.retryable));
-      if (err.rateLimit) setRateLimitStatus(err.rateLimit);
+      setError(describeError(err, { type }));
+      if (err.rateLimit) setRateLimitStatus((prev) => ({ ...prev, ...err.rateLimit }));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div
-      className="min-h-screen flex flex-col items-center px-4 py-20"
-      style={{ backgroundColor: "var(--color-bg-primary)" }}
-    >
-      <div className="w-full max-w-3xl mb-14 flex flex-col items-start gap-3">
-        <div
-          className="pl-4"
-          style={{
-            borderLeft: "2px solid var(--color-accent)",
-          }}
-        >
-          <h1
-            className="text-5xl font-black tracking-[-0.08em] uppercase leading-none"
-            style={{ color: "var(--color-accent)" }}
-          >
-            Roastify
-          </h1>
-          <div
-            className="mt-3 h-px w-24"
-            style={{ backgroundColor: "var(--color-accent)" }}
-          />
+    <div className="app-root">
+      <header className="header">
+        <div className="brand">
+          <span className="brand-mark" />
+          <span className="brand-name">Roastify</span>
         </div>
-        <p
-          className="text-sm sm:text-base tracking-[0.02em]"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Paste a profile URL and let the machine do the judging.
-        </p>
-      </div>
+        <div className="hmeta">
+          <span className="hmeta-item">no login</span>
+          <span className="hmeta-item hmeta-item--free">free</span>
+        </div>
+      </header>
 
-      <div className="w-full max-w-3xl flex flex-col gap-10">
-        <InputForm
-          url={url}
-          onUrlChange={setUrl}
-          type={type}
-          onTypeChange={setType}
-          severity={severity}
-          onSeverityChange={setSeverity}
-          persona={persona}
-          onPersonaChange={setPersona}
-          model={model}
-          onModelChange={setModel}
-          onSubmit={handleSubmit}
-          loading={loading}
-        />
-
-        {rateLimitStatus && (
-          <p
-            className="text-center text-[10px] uppercase tracking-[0.18em]"
-            style={{ color: rateLimitStatus.remaining === 0 ? "var(--color-accent)" : "var(--color-text-secondary)" }}
-          >
-            {rateLimitStatus.unlimited
-              ? "rate limit bypassed (dev)"
-              : rateLimitStatus.remaining > 0
-              ? `${rateLimitStatus.remaining}/${rateLimitStatus.limit} roasts left this hour`
-              : rateLimitStatus.reset
-              ? `rate limit reached — resets in ${formatCountdown(rateLimitStatus.reset - now)}`
-              : "rate limit reached — try again later"}
+      <section className="hero">
+        <div className="hero-main">
+          <div className="hero-kicker">Profile roaster · 00</div>
+          <h1 className="hero-title">
+            Get
+            <br />
+            roasted
+          </h1>
+          <div className="hero-rule" />
+          <p className="hero-copy">
+            Drop a link or a PDF. The machine reads it, finds the gap between how you look and
+            what you shipped, and says it out loud in the voice you pick. Then it tells you how
+            to fix it.
           </p>
-        )}
+        </div>
+        <div className="hero-side">
+          <div className="hero-side-header">What it reads</div>
+          <div className="hero-side-row">
+            <span className="hero-side-row-label">github</span>
+            <span className="hero-side-row-value">
+              <span className="hero-side-row-kind">link</span> · repos · graph · bio
+            </span>
+          </div>
+          {instagramEnabled && (
+            <div className="hero-side-row">
+              <span className="hero-side-row-label">instagram</span>
+              <span className="hero-side-row-value">
+                <span className="hero-side-row-kind">link</span> · captions · grid
+              </span>
+            </div>
+          )}
+          <div className="hero-side-row">
+            <span className="hero-side-row-label">linkedin</span>
+            <span className="hero-side-row-value">
+              <span className="hero-side-row-kind">pdf</span> · headline · roles
+            </span>
+          </div>
+          <div className="hero-side-row">
+            <span className="hero-side-row-label">resume</span>
+            <span className="hero-side-row-value">
+              <span className="hero-side-row-kind">pdf</span> · or pasted text
+            </span>
+          </div>
+          <div className="hero-side-footer">
+            Output: one roast, five to seven fixes you can actually do this week.
+          </div>
+        </div>
+      </section>
 
-        {showSlowNotice && (
-          <p
-            className="text-center text-[10px] uppercase tracking-[0.18em]"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            still scraping the profile, this can take up to ~30s — hang tight
-          </p>
-        )}
+      <section className="steps">
+        <div className="step">
+          <div className="step-index">01</div>
+          <div className="step-copy">Pick a source — paste a link or drop a PDF.</div>
+        </div>
+        <div className="step">
+          <div className="step-index">02</div>
+          <div className="step-copy">Choose a voice, and how much it should hurt.</div>
+        </div>
+        <div className="step">
+          <div className="step-index">03</div>
+          <div className="step-copy">Watch it print, then tick off the fixes.</div>
+        </div>
+      </section>
 
-        {error && (
-          <div
-            className="border p-4 text-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-            style={{
-              borderColor: "var(--color-accent)",
-              backgroundColor: "var(--color-bg-tertiary)",
-              color: "var(--color-accent)",
-              borderRadius: "2px",
-            }}
-          >
-            <span>{error}</span>
-            {errorRetryable && (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading}
-                className="shrink-0 border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors duration-200"
-                style={{
-                  borderColor: "var(--color-accent)",
-                  backgroundColor: "transparent",
-                  color: "var(--color-accent)",
-                  borderRadius: "2px",
-                  fontFamily: "'Courier New', monospace",
-                  opacity: loading ? 0.5 : 1,
-                  cursor: loading ? "not-allowed" : "pointer",
-                }}
-              >
-                try again
-              </button>
-            )}
+      <InputForm
+        key={resetKey}
+        url={url}
+        onUrlChange={setUrl}
+        type={type}
+        onTypeChange={handleTypeChange}
+        severity={severity}
+        onSeverityChange={setSeverity}
+        persona={persona}
+        onPersonaChange={setPersona}
+        model={model}
+        onModelChange={setModel}
+        onSubmit={handleSubmit}
+        loading={loading}
+        instagramEnabled={instagramEnabled}
+      />
+
+      <section className="submit-section">
+        <button type="button" className={`submit${loading ? " is-streaming" : ""}`} disabled={disabled} onClick={handleSubmit}>
+          <span>{loading ? "roasting" : "roast this profile"}</span>
+          <span className="submit-arrow">&#8594;</span>
+        </button>
+        {loading && (
+          <div className="progress-track">
+            <div className="progress-bar" />
           </div>
         )}
+        <div className="rate">
+          <span className="rate-label">
+            Rate limit ·{" "}
+            <span className="rate-label-value">
+              {rateLimitStatus?.unlimited
+                ? "bypassed (dev)"
+                : `${rateLimit.remaining}/${rateLimit.limit} roasts left this hour`}
+            </span>
+          </span>
+          {!rateLimitStatus?.unlimited && (
+            <span className="rate-ticks">
+              {Array.from({ length: rateLimit.limit }, (_, i) => (
+                <span key={i} className={`rate-tick${i < rateLimit.remaining ? " is-filled" : ""}`} />
+              ))}
+            </span>
+          )}
+        </div>
+      </section>
 
-        {result && (
-          <RoastCard
-            roast={result.roast}
-            tips={result.tips}
-            modelUsed={result.modelUsed}
-            personaName={personaName(result.persona)}
-          />
-        )}
+      <div ref={outputRef}>
+        <RoastCard
+          status={status}
+          roast={result?.roast ?? ""}
+          tips={result?.tips ?? []}
+          error={error}
+          type={type}
+          severity={severity}
+          personaName={personaName(persona)}
+          modelUsed={result?.modelUsed}
+          onRetry={handleSubmit}
+          onRoastAnother={handleRoastAnother}
+        />
       </div>
 
-      <footer
-        className="mt-24 text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        developed by Sarthak Mohite · powered by Groq
+      <footer className="footer">
+        <div className="footer-name">Made by Sarthak Mohite</div>
+        <div className="footer-spacer" />
+        <div className="footer-brand">
+          <span className="footer-brand-mark" />
+          <span className="footer-brand-name">Roastify</span>
+        </div>
       </footer>
     </div>
   );

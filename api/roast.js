@@ -6,6 +6,7 @@ import { ERROR_CODES, RoastError, toErrorEnvelope } from "./_lib/errors.js";
 import { getSystemPrompt } from "./_lib/prompts/index.js";
 import { resolvePersona, isPersonaAllowedForType } from "./_lib/prompts/personas.js";
 import { fenceUntrustedContent } from "./_lib/prompts/fence.js";
+import { isInstagramEnabled } from "./_lib/config.js";
 import { extractGithubUsername, scrapeGithub } from "./_lib/scrapers/github.js";
 import { extractInstagramUsername, scrapeInstagram } from "./_lib/scrapers/instagram.js";
 import { extractStreamingRoastText, sendSseEvent } from "./_lib/streaming.js";
@@ -142,6 +143,21 @@ export default async function handler(req, res) {
       ERROR_CODES.PERSONA_NOT_ALLOWED_FOR_TYPE,
       `The "${persona.name}" persona isn't available for ${type} roasts.`,
       { status: 400 }
+    );
+    logFailure(err, { type, model: modelOption.model, persona: persona.id });
+    return res.status(err.status).json(toErrorEnvelope(err));
+  }
+
+  // Kill switch: Instagram is the only remaining scraping dependency, so it needs to be
+  // disposable without a deploy if the Apify actor breaks. Checked here (same early-exit
+  // spot as the persona/type check above, before rate limiting is consumed) rather than
+  // inside scrapeInstagram() so a disabled request doesn't cost the caller a rate-limit
+  // token for a request that was never going to succeed.
+  if (type === "instagram" && !isInstagramEnabled()) {
+    const err = new RoastError(
+      ERROR_CODES.SOURCE_UNAVAILABLE,
+      "Instagram roasts are temporarily unavailable. Try GitHub, LinkedIn, or your resume instead.",
+      { status: 503, retryable: false }
     );
     logFailure(err, { type, model: modelOption.model, persona: persona.id });
     return res.status(err.status).json(toErrorEnvelope(err));

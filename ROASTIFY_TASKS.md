@@ -626,3 +626,73 @@ the existing resume flow. Net deletion, not a feature add.
   only net-new code is the client-side upload UI becoming type-agnostic (a rename plus a
   small conditional, not new logic) and the two test additions — a real net deletion
   overall, as intended.
+
+## 10. Visual redesign (Claude Design v2 handoff) + Instagram kill switch (2026-08-21)
+
+Goal: implement a full presentation-layer redesign from a Claude Design handoff (read via
+the DesignSync MCP tool) — same product, same API contract, only the look changes — plus
+an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
+
+### Redesign
+- [x] Read the authoritative bundle (`Roastify Enhanced v2.dc.html` + its README) directly
+  rather than trusting the superseded v1 handoff bundled alongside it (factually wrong:
+  GPT-4o in header/footer, no persona picker, URL-only input, no error state) — deleted
+  the v1 `README.md` from the design project so it can't be mistakenly followed later.
+- [x] Full-bleed gutter-grid layout implemented as plain CSS classes + real `@media`
+  queries in `src/index.css` (not the prototype's `!important`/`data-r` streaming hack),
+  using the handoff's own `data-r="x"` → `.x` naming crib. All four breakpoints
+  (1180/900/600/380px) transcribed verbatim from the design source.
+- [x] Component boundaries moved to match the handoff's file-mapping table: submit button
+  + progress rule + rate strip moved from `InputForm.jsx` into `App.jsx`; `RoastCard.jsx`
+  now owns all four Output states (idle/streaming/error/complete) instead of only the
+  completed roast. See `CLAUDE.md`'s "Frontend structure" for the full breakdown.
+  Source list reordered (`github → instagram → linkedin → resume`) so the two URL sources
+  and the two PDF sources are each adjacent, per the handoff.
+- [x] Real HTML5 drag-and-drop added to the upload zone (previously click-to-browse only),
+  sharing one `processFile()` with the existing file-input path rather than duplicating
+  extraction/validation logic.
+- [x] Streaming "stage" label — the handoff's prototype drives this with a fake timer
+  cycling through GitHub-flavored copy ("counting abandoned repos…"). Resolved with the
+  user during planning: replaced with a value derived from real stream lifecycle instead
+  (no roast text yet vs. tokens arriving) — two real states, two static labels, no timer,
+  no wrong-domain copy on non-GitHub roasts.
+- [x] New error "detail" line (a UI element the old design didn't have) synthesized from
+  real data only: a real countdown for rate-limit errors, the checked source type for
+  scrape errors (never raw submitted text), a plain machine code otherwise. No fabricated
+  per-error-code action phrasing — the retry button stays "try again" for anything
+  retryable, per what the backend envelope actually provides.
+- [x] Checkbox glyph switched from an inline SVG to the literal `✓` text character, per
+  the design's "no icon fonts, no SVG" rule; the underlying visually-hidden real
+  `<input type="checkbox">` accessibility technique is unchanged.
+- [x] Dropped `showSlowNotice`/`SLOW_SCRAPE_TYPES` (the old "still scraping" text) as dead
+  weight — the redesign's real streaming stage label already covers it, and the design
+  has no slot for a second, separate notice.
+- [x] Old `--color-*` CSS token set removed entirely (confirmed unreferenced via grep
+  before deleting), replaced by the new `--ground-*`/`--ink-*`/`--rule-*`/`--accent*` set
+  copied verbatim from the handoff.
+- [x] Tests: no frontend test suite exists (vitest only covers `api/**/*.test.js`), so
+  this pass touched zero existing tests — confirmed 87/87 backend tests still pass
+  unmodified (aside from the kill-switch item below).
+- [x] **Manually verified live** in a real browser (desktop, real Groq/Apify/Upstash
+  credentials): idle, a real error (invalid GitHub handle → synthesized detail line
+  matching spec), a real streaming roast (watched the derived-from-lifecycle stage label
+  and live char count update against actual Groq tokens), complete (meta row, working fix
+  checklist), and "roast another" reset. **Mobile breakpoints not manually verified** —
+  the available browser-resize tooling didn't actually shrink the rendering viewport in
+  this sandboxed environment; the `@media` rules are a verbatim transcription of the
+  handoff's own source, but a real responsive-mode check is still owed to the user.
+
+### Instagram kill switch
+- [x] `api/_lib/config.js`'s `isInstagramEnabled()` (`INSTAGRAM_ENABLED !== "false"`, same
+  boolean-string convention as `NODE_ENV`), a new `SOURCE_UNAVAILABLE` error code, and an
+  early-exit check in `api/roast.js` (before rate limiting is consumed) rejecting a
+  disabled Instagram request with a 503.
+- [x] `api/rate-limit-status.js` reports `instagramEnabled` in all three response shapes,
+  reusing the endpoint the frontend already polls on page load rather than adding a new
+  one. `InputForm.jsx` hides the Instagram source card when disabled; `App.jsx` merges
+  (not replaces) the flag into `rateLimitStatus` so a later roast response doesn't
+  silently un-hide it.
+- [x] Tests (additive): `api/_lib/config.test.js`, new `api/roast.test.js` handler tests,
+  and `api/rate-limit-status.test.js` coverage (2 pre-existing assertions there needed
+  updating for the new response field — an intentional, in-scope shape change, not a
+  regression). 95/95 total passing. `npm run lint` and `npm run build` both clean.

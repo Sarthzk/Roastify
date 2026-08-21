@@ -8,6 +8,143 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-08-21
 
+### Visual redesign (Claude Design v2 handoff) + Instagram kill switch
+Implemented a full presentation-layer redesign from a Claude Design handoff, read via the
+DesignSync MCP tool from the user's claude.ai/design project (`Roastify aesthetic
+enhancement`, `Roastify Enhanced v2.dc.html` + its README). Same product, same API
+contract — a full-bleed modular grid with a persistent left label gutter, hard rules
+instead of card borders, display-scale typography, a persona picker sharing a row with
+severity, source-dependent input (URL vs. PDF-upload), a real streaming state, an
+explicit error state, a rate-limit meter, and full responsive collapse at
+1180/900/600/380px. The bundle's v1 handoff (`design_handoff_roastify_redesign/README.md`)
+was superseded and factually wrong (GPT-4o in header/footer, no persona picker, URL-only
+input, no error state) — deleted from the design project via `DesignSync.delete_files`
+before starting, so it can't be mistakenly followed later.
+- **Read the full `.dc.html` source directly**, not just its README — every color/spacing/
+  breakpoint value in the CSS below is copied verbatim from the design file, not inferred.
+  Did not port the file's own `<sc-for>`/`<sc-if>`/`<x-dc>` tags or its `!important`/
+  `data-r`-attribute breakpoint hack — that exists only because the DC format streams
+  inline styles for live preview. Wrote ordinary CSS classes and ordinary `@media` queries
+  instead, per the handoff's own explicit instruction, using its `data-r="x"` → `.x`
+  naming crib so the CSS and the original design doc read side by side.
+- **Resolved with the user during planning**: the design's streaming "stage" line (reading
+  profile… → counting abandoned repos… → sharpening… → printing…) is driven by a fake
+  `setInterval` in the prototype tied to its hardcoded GitHub demo roast — "counting
+  abandoned repos" would read as a bug on a non-GitHub roast, and the timing has no real
+  backend signal behind it anyway. Replaced with a value derived from actual stream
+  lifecycle instead: no roast text has arrived yet vs. tokens are actively streaming in —
+  two real states, two static labels, no interval, no GitHub-specific copy.
+- **Component boundaries moved to match the handoff's own file-mapping table**: the submit
+  button + progress rule + rate-limit strip moved from `InputForm.jsx` into `App.jsx`
+  (which already owns all state); `RoastCard.jsx` grew from "renders the finished roast"
+  into owning all four Output states (idle/streaming/error/complete) — previously `App.jsx`
+  rendered a separate ad-hoc error `<div>` and only conditionally mounted `RoastCard` on
+  success. `InputForm.jsx` shrank to source/input/voice rows, with the source list
+  reordered (`github → instagram → linkedin → resume`, so the two URL sources are adjacent
+  and the two PDF sources are adjacent, per the handoff).
+- **"Roast another" full reset without lifting upload state to `App.jsx`**: url/type/
+  severity/persona/result reset trivially in `App.jsx`; the upload-specific ephemeral state
+  (file confirmation card, upload status/error, drag-over) stays local to `InputForm` since
+  it's presentation detail — `App.jsx` instead keeps a `resetKey` counter, bumped on
+  "roast another" and passed as `key={resetKey}` to `<InputForm>`, forcing a clean remount
+  that clears all of it for free. `RoastCard`'s own `checked` tip-list state resets
+  whenever the `tips` array reference changes (covers both a new roast and the empty array
+  after a reset) via React's "adjust state during render" pattern rather than a `useEffect`
+  — the modern React lint rule flags a synchronous `setState` inside an effect body as an
+  avoidable extra render pass, and both `InputForm`'s upload-state-reset-on-type-change and
+  this needed the same fix.
+- **Real data behind every visual state, nothing invented**: streaming char count is
+  `streamText.length` (already accumulating via the existing `onRoastChunk` callback);
+  the rate-limit ticks read `rateLimitStatus.limit`/`.remaining` with an optimistic
+  5/5 default before the first `/api/rate-limit-status` response lands (mirrors the
+  server's own optimistic fail-open default), and the existing dev-bypass
+  (`unlimited: true`) state folds into the same strip as a `RATE LIMIT · BYPASSED (DEV)`
+  label instead of being dropped; the error state's new **detail** line (a UI element the
+  old design didn't have) is synthesized from real data only — a `RATE_LIMITED` error gets
+  an actual countdown from the error's own attached `rateLimit.reset` snapshot, a
+  scrape-family error names the source type that was checked (deliberately never the raw
+  submitted text, which could be pasted resume/profile content), everything else falls
+  back to a plain `err_{code}` machine string; the retry button stays a plain "try again"
+  for every retryable error rather than inventing per-code action phrasing the backend
+  doesn't actually provide.
+- **Real drag-and-drop added** to the upload zone (native HTML5 `onDragOver`/`onDragLeave`/
+  `onDrop`), which the app didn't have before — both the drop path and the existing
+  click-to-browse `<input type=file>` path now funnel through one shared `processFile()`
+  rather than duplicating extraction/validation logic.
+- **Checkbox glyph switched from an inline SVG checkmark to the literal `✓` text
+  character**, per the design's "no icon fonts, no SVG — every glyph is a text character"
+  rule; the underlying visually-hidden real `<input type="checkbox">` accessibility
+  technique is unchanged.
+- **`html2canvas` save-as-image**: kept the real existing handler, just re-pointed
+  `cardRef` at the new Roast+Meta+Fixes block and updated its hardcoded fallback hex from
+  `#0e0e0e` to `#0a0a0a` to match the new `--ground-2` token (canvas `fillStyle` still
+  can't resolve CSS custom properties, so this literal has to be kept in sync by hand —
+  same documented exception as before, just a new number).
+- **Dropped the old `showSlowNotice`/`SLOW_SCRAPE_TYPES` "still scraping" text** — the
+  redesign's streaming state already communicates progress via the real "reading
+  profile…"/"printing…" stage label above, and the design has no slot for a second,
+  separate notice; kept as dead weight it would have been otherwise.
+- **CSS**: extended `src/index.css`'s tokens (`--ground` through `--ground-5`, `--accent`/
+  `--accent-dk`, `--ink` through `--ink-4`, `--rule`/`--rule-2`, all copied verbatim from
+  the handoff) and removed the old `--color-*` set entirely — confirmed via a repo-wide
+  grep that nothing referenced it anymore once all three components were rewritten, rather
+  than leaving it as unreferenced dead weight. All four breakpoints (1180/900/600/380)
+  implemented as real `@media` queries.
+
+### Instagram kill switch (`INSTAGRAM_ENABLED`)
+Added alongside the redesign since it touches the same source picker. Instagram is the
+app's only remaining scraping dependency (LinkedIn moved to PDF upload earlier today) and
+needed to be disposable without a deploy if the Apify actor breaks.
+- New `api/_lib/config.js`: `isInstagramEnabled()` — `process.env.INSTAGRAM_ENABLED !==
+  "false"`, same boolean-string convention as `NODE_ENV === "development"` elsewhere in
+  this codebase (only the literal string `"false"` disables it; unset/anything-else stays
+  enabled). New `ERROR_CODES.SOURCE_UNAVAILABLE` in `api/_lib/errors.js`.
+- `api/roast.js`: checks `type === "instagram" && !isInstagramEnabled()` right after the
+  existing persona/type check (before rate limiting is consumed, so a disabled request
+  doesn't cost the caller a token for a request that was never going to succeed) and
+  rejects with `SOURCE_UNAVAILABLE` (503, non-retryable).
+- `api/rate-limit-status.js` adds `instagramEnabled` to all three of its response shapes
+  (normal, dev-bypass, Upstash-fail-open) — reusing the endpoint the frontend already
+  calls on page load rather than adding a new endpoint for one boolean.
+- `App.jsx` merges (not replaces) `instagramEnabled` into `rateLimitStatus` after each
+  roast completes — `data.rateLimit` from `/api/roast` only ever carries limit/remaining/
+  reset, never `instagramEnabled` (that only comes from the page-load `/api/rate-limit-
+  status` call), so a plain replace would have silently un-hidden a disabled Instagram
+  card after the first successful roast. `InputForm.jsx` filters the Instagram source
+  card out of the row when disabled; a `useEffect` in `App.jsx` falls back to `github` if
+  `type === "instagram"` at the moment it becomes disabled mid-session.
+- Tests (additive only): `api/_lib/config.test.js` for `isInstagramEnabled()`; new handler
+  tests in `api/roast.test.js` (rejects with 503 when disabled, unaffected when unset,
+  doesn't affect other types) and `api/rate-limit-status.test.js` (the new field appears
+  correctly in both the Upstash-success and dev-bypass response shapes) — the two existing
+  `rate-limit-status.test.js` assertions that used `toEqual` on the full response body
+  needed updating to include the new field (an intentional, explicitly-scoped response-
+  shape change, not a behavior regression).
+- 95/95 tests passing (87 baseline + 3 config + 3 roast.js kill-switch + 2 rate-limit-
+  status kill-switch). `npm run lint` and `npm run build` both clean.
+- **Manually verified live in a real browser** (Chrome via the claude-in-chrome tools,
+  against `node index.js` + `npm run dev` with real Groq/Apify/Upstash credentials, dev
+  mode so `NODE_ENV=development`): desktop layout matches the design closely (header,
+  hero, steps, source row, voice row, dev-only model row all screenshotted and compared);
+  switching to LinkedIn shows the upload UI with the correct hint text; submitting an
+  invalid GitHub handle produced a real `SCRAPE_INVALID_INPUT` error with the synthesized
+  detail line rendering exactly as designed (`checked github · err_scrape_invalid_input`,
+  no retry button, since that code is non-retryable); submitting `octocat` produced a real
+  streaming roast from Groq — watched the "printing…" stage label and live char count
+  update token-by-token, confirming the derived-from-lifecycle stage logic actually works
+  against a real stream, not just in theory — followed by the complete state (meta row,
+  7-item fix checklist, working checkbox interaction with the fixes counter updating);
+  "roast another" correctly reset the output to idle and cleared the URL field while
+  preserving the persona/severity selection, matching the design's own reset semantics.
+  **Could not verify the mobile breakpoints live** — the available browser-resize tool
+  didn't actually shrink the tab's rendering viewport in this sandboxed environment
+  (`window.innerWidth` stayed at desktop width regardless of the requested window size);
+  the four `@media` blocks are transcribed verbatim from the handoff's own source rather
+  than re-derived, but a real-device/DevTools-responsive-mode check is still owed — see
+  the click-through list handed to the user for exactly what to check.
+- Both `node index.js` (port 3001) and `npm run dev` (port 5173) were left running in the
+  background for the user's own follow-up manual testing.
+
 ### Replaced LinkedIn scraping with LinkedIn PDF upload
 The Apify LinkedIn actor never actually worked in production — its run log showed it
 receiving the profile URL fine but failing at fetch with "Unexpected profile response,"
