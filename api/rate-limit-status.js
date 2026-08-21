@@ -5,6 +5,14 @@ export default async function handler(req, res) {
   if (handleCorsPreflight(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  // Dev-only bypass, mirroring api/roast.js's skip of the same Upstash check — the UI
+  // shouldn't display a stale/fake count against a limit that isn't actually being
+  // enforced. `limit`/`remaining`/`reset` stay null (not a fabricated number) with
+  // `unlimited: true` marking why.
+  if (process.env.NODE_ENV === "development") {
+    return res.json({ limit: null, remaining: null, reset: null, unlimited: true });
+  }
+
   const ip = getClientIP(req);
 
   try {

@@ -1,6 +1,13 @@
 import { createRedisClient } from "./rateLimit.js";
 
-const CACHE_TTL_SECONDS = 60 * 60; // 1 hour
+// Instagram goes through Apify (a billed run per scrape) and profiles change slowly, so
+// it's cached longer than GitHub, which is a free API and cheap to re-hit. LinkedIn has
+// no entry — it's no longer scraped at all (PDF upload instead, see api/roast.js).
+const CACHE_TTL_SECONDS = {
+  github: 60 * 60, // 1 hour
+  instagram: 24 * 60 * 60, // 24 hours
+};
+const DEFAULT_CACHE_TTL_SECONDS = 60 * 60;
 const CACHE_PREFIX = "scrape";
 
 function cacheKey(type, identifier) {
@@ -29,7 +36,7 @@ export async function withScrapeCache(type, identifier, fetcher) {
 
   if (redis) {
     try {
-      await redis.set(key, result, { ex: CACHE_TTL_SECONDS });
+      await redis.set(key, result, { ex: CACHE_TTL_SECONDS[type] ?? DEFAULT_CACHE_TTL_SECONDS });
     } catch (err) {
       console.error("Scrape cache write failed:", err.message);
     }

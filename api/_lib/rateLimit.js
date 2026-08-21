@@ -2,7 +2,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
 export const RATE_LIMIT_MAX = 5;
-export const RATE_LIMIT_WINDOW = "1 h";
+const RATE_LIMIT_WINDOW = "1 h";
 
 export function getClientIP(req) {
   // Try to get the real client IP from various headers

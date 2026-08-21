@@ -1,7 +1,9 @@
 // Fixed set of profile inputs for scripts/eval-models.mjs. All profiles are synthetic
-// (fictional names/handles) — none reference real people. Formatted to match exactly
-// what scrapeGithub / scrapeLinkedIn / scrapeInstagram produce in api/roast.js, so the
-// eval sees the same shape of input the models see in production.
+// (fictional names/handles) — none reference real people. github/instagram fixtures are
+// formatted to match exactly what scrapeGithub / scrapeInstagram produce in
+// api/_lib/scrapers/; linkedin/resume fixtures are pasted/PDF-extracted text (no
+// scraper — see CLAUDE.md's "Request flow"), so their format is just representative
+// profile/resume text rather than tied to a specific function's output shape.
 
 export const FIXTURES = [
   {

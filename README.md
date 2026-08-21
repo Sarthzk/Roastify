@@ -6,16 +6,25 @@
 
 ---
 
-Roastify is an AI-powered profile roaster. Paste a GitHub, LinkedIn, or Instagram URL — or upload your resume — and it'll tear it apart like Ricky Gervais at the Golden Globes. You get a savage roast and 5–7 actionable tips to actually improve.
+Roastify is an AI-powered profile roaster. Paste a GitHub or Instagram URL — or upload your resume or a LinkedIn profile PDF — and it'll tear it apart. You get a savage roast and 5–7 actionable tips to actually improve.
 
-Choose your pain level: **Mild**, **Medium**, or **Destroy Me**. Choose your model too: **GPT-4o**, or Cohere's **Command A** / **Command R** via OpenRouter.
+Choose your pain level: **Mild**, **Medium**, or **Destroy Me**. Choose your judge too — three personas, same input, very different roasts:
+
+- **The Cynic** — dry, nihilistic, Ricky-Gervais-at-the-Golden-Globes flavored. The original voice.
+- **The Recruiter** — savage but professional. No jokes, no nihilism — a blunt hiring verdict citing exactly what's wrong, with the most concrete fix-it tips of the three.
+- **The Desi Uncle** — disappointed, not cruel, comparing you to an imaginary more-successful relative. Heaviest Hinglish, funny rather than mean underneath.
+
+Runs on Groq's free tier, fast enough that the roast streams in live as it's written.
 
 ---
 
 ## What it supports
 
 - **GitHub** — roasts your repos, contribution graph, and bio using the GitHub API
-- **LinkedIn** — goes after your buzzwords and professional facade
+- **LinkedIn** — export your profile as a PDF (More → Save to PDF) and upload it, or
+  paste the text — goes after your buzzwords and professional facade. Not a live URL
+  scrape: LinkedIn blocks unauthenticated profile reads, so this is the only reliable way
+  in
 - **Instagram** — critiques your aesthetic and engagement
 - **Resume** — drag in a PDF or paste text and watch it burn
 
@@ -40,24 +49,27 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Required for | Where to get it |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | the GPT-4o model option | https://platform.openai.com/api-keys |
-| `OPENROUTER_API_KEY` | the Command A / Command R model options | https://openrouter.ai/keys |
-| `APIFY_API_TOKEN` | LinkedIn / Instagram scraping | https://console.apify.com/account/integrations |
+| `GROQ_API_KEY` | every roast — the pinned production model (GPT-OSS 120B) | https://console.groq.com/keys (free tier, no credit card) |
+| `APIFY_API_TOKEN` | Instagram scraping only | https://console.apify.com/account/integrations |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | rate limiting + scrape caching | a Redis database at https://console.upstash.com/ |
+| `OPENAI_API_KEY` | optional, dev-only — the GPT-4o comparison option (`NODE_ENV=development`) | https://platform.openai.com/api-keys |
 
-GitHub and resume roasts work without the Apify token or Upstash credentials —
-Apify is only needed for LinkedIn/Instagram, and the app fails open (skips rate
-limiting/caching) if Upstash isn't configured. You only need one of `OPENAI_API_KEY`
-/ `OPENROUTER_API_KEY` — just whichever model(s) you plan to select in the UI.
+GitHub, LinkedIn, and resume roasts all work without the Apify token or Upstash
+credentials — Apify is only needed for Instagram now (LinkedIn moved to PDF
+upload/paste, no scraping involved), and the app fails open (skips rate
+limiting/caching) if Upstash isn't configured. There's no model picker in production —
+every roast uses Groq's GPT-OSS 120B regardless of what a client sends. `OPENAI_API_KEY`
+is only needed if you set `NODE_ENV=development` locally and want to try the GPT-4o
+comparison option in the (dev-only) model picker.
 
 ### Checks
 
 ```sh
 npm run lint    # eslint (frontend + index.js — see CLAUDE.md for what it doesn't cover)
-npm test        # vitest, pure parsing functions in api/roast.js
+npm test        # vitest, api/**/*.test.js
 npm run build   # production build
 ```
 
 ---
 
-Built with React, Vite, GPT-4o / Cohere Command (via OpenRouter), and deployed on Vercel.
+Built with React, Vite, Groq (GPT-OSS 120B), and deployed on Vercel.

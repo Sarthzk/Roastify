@@ -1,23 +1,31 @@
 #!/usr/bin/env node
 // Standalone eval harness — NOT part of the deployed app. Runs the exact production
 // system prompt (getSystemPrompt from api/roast.js) against a fixed set of profile
-// fixtures (scripts/eval-fixtures.mjs), across gpt-4o (current baseline) and a set of
-// open-weight candidates on OpenRouter. Writes one Markdown file per fixture, with all
-// models' outputs side by side, to scripts/eval-output/ for manual comparison.
+// fixtures (scripts/eval-fixtures.mjs), across gpt-4o (dev-only comparison baseline)
+// and Groq's free-tier candidates (persona defaults to "cynic" for this comparison —
+// it's the one that matches current production output). Also runs a separate persona
+// comparison per fixture — the same input across all 3 personas, against the
+// production default model only (not the full model matrix; the point is reading the
+// voices against each other, not a model x persona cross-product). Writes one Markdown
+// file per fixture, with the
+// model comparison and persona comparison sections side by side, to
+// scripts/eval-output/ for manual comparison.
 //
 // Usage:
-//   OPENAI_API_KEY=... OPENROUTER_API_KEY=... node scripts/eval-models.mjs
+//   OPENAI_API_KEY=... GROQ_API_KEY=... node scripts/eval-models.mjs
 //
-// Get an OpenRouter key at https://openrouter.ai/keys — pay-per-token, no subscription,
-// credits don't expire. The `:free` Llama variant costs nothing while iterating.
+// Get a Groq key at https://console.groq.com/keys — free tier, no credit card, rate-
+// limited rather than metered, so there's no cost while iterating.
 //
-// See ROASTIFY_TASKS.md section 4 for the full migration plan this script supports.
+// See ROASTIFY_TASKS.md section 4B for the OpenRouter/Cohere → Groq migration this
+// script supports, and section 7 for the persona system this script's persona
+// comparison covers.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
-import { getSystemPrompt } from "../api/roast.js";
+import { getSystemPrompt, PERSONAS, MODEL_OPTIONS, DEFAULT_MODEL_KEY } from "../api/roast.js";
 import { FIXTURES } from "./eval-fixtures.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,32 +54,43 @@ function loadEnvFile(filePath) {
     });
 }
 
-export function buildModels({ openaiApiKey, openrouterApiKey }) {
+export function buildModels({ openaiApiKey, groqApiKey }) {
   const openaiClient = new OpenAI({ apiKey: openaiApiKey });
-  const openrouterClient = new OpenAI({ apiKey: openrouterApiKey, baseURL: "https://openrouter.ai/api/v1" });
+  const groqClient = new OpenAI({ apiKey: groqApiKey, baseURL: "https://api.groq.com/openai/v1" });
 
   return [
-    { id: "gpt-4o", label: "gpt-4o (current baseline)", client: openaiClient },
-    { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct", client: openrouterClient },
-    { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", client: openrouterClient },
-    // NOTE: Qwen ships multiple dated/versioned slugs on OpenRouter (this changes over
-    // time) — confirm the current exact slug at https://openrouter.ai/models before
-    // running. This is the task file's stated best guess, not a verified-live slug.
-    { id: "qwen/qwen3-235b-a22b", label: "Qwen3 235B A22B", client: openrouterClient },
+    { id: "gpt-4o", label: "gpt-4o (dev-only comparison baseline)", provider: "openai", client: openaiClient },
+    { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (production default)", provider: "groq", client: groqClient },
+    { id: "openai/gpt-oss-20b", label: "GPT-OSS 20B", provider: "groq", client: groqClient },
+    { id: "qwen/qwen3.6-27b", label: "Qwen3.6 27B", provider: "groq", client: groqClient },
   ];
 }
 
-export async function runOne(model, fixture) {
+export async function runOne(model, fixture, personaId) {
   const start = Date.now();
   try {
-    const response = await model.client.chat.completions.create({
+    // Mirrors buildCompletionParams() in api/roast.js (minus `stream`, since this harness
+    // runs one-shot completions): Groq's gpt-oss models buffer their whole response under
+    // `response_format: json_object` instead of streaming it, so production enforces JSON
+    // via the system prompt alone for "groq" and adds `reasoning_effort: "low"` to cut
+    // the invisible reasoning phase. Kept in sync manually — there's no shared helper
+    // across the streaming/non-streaming split, so if that function changes, update here.
+    // `personaId` is optional — omitted, getSystemPrompt falls back to the default
+    // persona (cynic), matching what the model-comparison loop below has always run.
+    const params = {
       model: model.id,
-      response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: getSystemPrompt(fixture.type, fixture.severity) },
+        { role: "system", content: getSystemPrompt(fixture.type, fixture.severity, personaId) },
         { role: "user", content: fixture.profileText },
       ],
-    });
+    };
+    if (model.provider === "groq") {
+      params.reasoning_effort = "low";
+    } else {
+      params.response_format = { type: "json_object" };
+    }
+
+    const response = await model.client.chat.completions.create(params);
 
     const durationMs = Date.now() - start;
     const content = response.choices?.[0]?.message?.content ?? "";
@@ -114,22 +133,65 @@ export function formatResult(model, result) {
   return lines.join("\n");
 }
 
+export function formatPersonaResult(persona, result) {
+  const lines = [`#### ${persona.name} (\`${persona.id}\`) — ${persona.tagline}`, ""];
+
+  if (result.parseError) {
+    lines.push(`**FAILED** — ${result.parseError} _(${result.durationMs}ms)_`, "");
+    if (result.raw) lines.push("Raw output:", "", "```", result.raw, "```", "");
+  } else {
+    lines.push(`_${result.durationMs}ms_`, "", "**Roast:**", "", result.parsed.roast, "", "**Tips:**", "");
+    for (const tip of result.parsed.tips) lines.push(`- ${tip}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+// Flags what to specifically look for when reading the persona-comparison section for a
+// given fixture — see ROASTIFY_TASKS.md for why these three checks matter: recruiter's
+// usefulness shouldn't degrade at low intensity, desi-uncle's humor shouldn't collapse
+// into just meanness at high intensity, and cynic (the pre-persona default voice) is the
+// regression check — it should read the same as it always has, since it's the same
+// fragment content the single hardcoded prompt used before this refactor.
+function personaComparisonNotes(fixture) {
+  const notes = [
+    "**Regression check**: does `cynic` read the same as the current production voice? " +
+      "It's composed from the exact same fragment content the old hardcoded prompt used " +
+      "(see `api/_lib/prompts/personas.js`), so it shouldn't have changed.",
+  ];
+  if (fixture.severity === "mild") {
+    notes.push("**Check**: does `recruiter` stay genuinely useful (specific, evidence-based) at `mild`, not just generically softer?");
+  }
+  if (fixture.severity === "destroy me") {
+    notes.push("**Check**: does `desi-uncle` stay funny at `destroy me`, not just harsher — and does it stay affectionate underneath (no family/caste/class cruelty)?");
+  }
+  return notes;
+}
+
 async function main() {
   await loadEnvFile(path.join(__dirname, "..", ".env"));
 
   const openaiApiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
+  const groqApiKey = process.env.GROQ_API_KEY;
 
   if (!openaiApiKey) {
-    console.error("Missing OPENAI_API_KEY (needed for the gpt-4o baseline).");
+    console.error("Missing OPENAI_API_KEY (needed for the gpt-4o comparison baseline).");
     process.exit(1);
   }
-  if (!openrouterApiKey) {
-    console.error("Missing OPENROUTER_API_KEY. Get one at https://openrouter.ai/keys and add it to .env.");
+  if (!groqApiKey) {
+    console.error("Missing GROQ_API_KEY. Get one at https://console.groq.com/keys (free tier) and add it to .env.");
     process.exit(1);
   }
 
-  const models = buildModels({ openaiApiKey, openrouterApiKey });
+  const models = buildModels({ openaiApiKey, groqApiKey });
+
+  // Persona comparison runs against the production default model only (not the full
+  // model matrix) — the point is reading the three voices against identical input, not
+  // a model x persona cross-product. Reuses the client already built above for that
+  // model rather than constructing a new one.
+  const personaComparisonModel = models.find((m) => m.id === MODEL_OPTIONS[DEFAULT_MODEL_KEY].model);
+  const personaList = Object.values(PERSONAS);
 
   await mkdir(OUTPUT_DIR, { recursive: true });
 
@@ -149,6 +211,8 @@ async function main() {
       "",
       "</details>",
       "",
+      "## Model comparison (persona: cynic, the default)",
+      "",
     ];
 
     for (const model of models) {
@@ -157,6 +221,19 @@ async function main() {
       console.log(result.ok ? `ok (${result.durationMs}ms)` : `FAILED — ${result.parseError}`);
       if (!result.ok) jsonFailures[model.id] += 1;
       sections.push(formatResult(model, result));
+    }
+
+    if (personaComparisonModel) {
+      sections.push(`## Persona comparison (model: ${personaComparisonModel.label})`, "");
+      for (const note of personaComparisonNotes(fixture)) sections.push(`- ${note}`);
+      sections.push("");
+
+      for (const persona of personaList) {
+        process.stdout.write(`  persona:${persona.id} ... `);
+        const result = await runOne(personaComparisonModel, fixture, persona.id);
+        console.log(result.ok ? `ok (${result.durationMs}ms)` : `FAILED — ${result.parseError}`);
+        sections.push(formatPersonaResult(persona, result));
+      }
     }
 
     await writeFile(path.join(OUTPUT_DIR, `${fixture.id}.md`), sections.join("\n"));

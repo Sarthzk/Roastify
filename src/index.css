@@ -2,11 +2,14 @@
 
 :root {
   --color-bg-primary: #000000;
-  --color-bg-secondary: #111111;
+  --color-bg-surface: #0e0e0e;
+  --color-bg-hover: #1a1a1a;
   --color-bg-tertiary: #0d0d0d;
   --color-text-primary: #d1d0c5;
   --color-text-secondary: #646669;
+  --color-text-muted: #3a3d41;
   --color-accent: #e2b714;
+  --color-accent-hover: #f0c832;
   --color-border: #2c2e31;
   --font-family: 'Courier New', monospace;
 }

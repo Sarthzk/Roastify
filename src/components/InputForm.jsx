@@ -1,6 +1,7 @@
 import { useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { PERSONAS } from "../lib/personas";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -11,13 +12,20 @@ export default function InputForm({
   onTypeChange,
   severity,
   onSeverityChange,
+  persona,
+  onPersonaChange,
   model,
   onModelChange,
   onSubmit,
   loading,
 }) {
-  const [resumeText, setResumeText] = useState(url);
-  const [resumeStatus, setResumeStatus] = useState("");
+  // Shared by the resume and linkedin types — both are pasted-text-or-uploaded-file
+  // inputs (linkedin via a "Save to PDF" export, since the Apify LinkedIn actor never
+  // worked unauthenticated), so they use the same upload/paste UI and extraction logic.
+  const [pastedText, setPastedText] = useState(url);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const isUploadType = type === "resume" || type === "linkedin";
 
   const profileTypes = [
     { value: "github", label: "01 github" },
@@ -28,10 +36,11 @@ export default function InputForm({
 
   const severities = ["mild", "medium", "destroy me"];
 
+  // Dev-only comparison options — production always uses the server's pinned default
+  // (see resolveProductionSafeModelOption in api/roast.js) regardless of what's sent.
   const models = [
+    { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
     { value: "gpt-4o", label: "GPT-4o" },
-    { value: "command-a", label: "Command A" },
-    { value: "command-r", label: "Command R" },
   ];
 
   function handleKey(e) {
@@ -53,9 +62,10 @@ export default function InputForm({
     return text.trim();
   }
 
-  async function handleResumeFileChange(event) {
+  async function handleFileChange(event) {
     const file = event.target.files?.[0];
-    setResumeStatus("");
+    setUploadStatus("");
+    setUploadError("");
 
     if (!file) {
       return;
@@ -65,27 +75,25 @@ export default function InputForm({
     const isPdf = fileName.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
     const isText = fileName.toLowerCase().endsWith(".txt") || file.type.startsWith("text/");
 
+    if (!isPdf && !isText) {
+      setUploadError(`"${fileName}" isn't a PDF or text file — try a different file, or paste the text instead.`);
+      return;
+    }
+
     try {
-      let extractedText = "";
-
-      if (isPdf) {
-        extractedText = await extractPdfText(file);
-      } else if (isText) {
-        extractedText = await file.text();
-      } else {
-        return;
-      }
-
+      const extractedText = isPdf ? await extractPdfText(file) : await file.text();
       const trimmedText = extractedText.trim();
+
       if (!trimmedText) {
+        setUploadError(`Couldn't find any text in "${fileName}" — try pasting the text instead.`);
         return;
       }
 
-      setResumeText(trimmedText);
+      setPastedText(trimmedText);
       onUrlChange(trimmedText);
-      setResumeStatus(`extracted ${trimmedText.length} characters from ${fileName}`);
+      setUploadStatus(`extracted ${trimmedText.length} characters from ${fileName}`);
     } catch {
-      // Silent fallback: the textarea below remains available for manual paste.
+      setUploadError(`Couldn't read "${fileName}" — try a different file, or paste the text instead.`);
     }
   }
 
@@ -94,7 +102,7 @@ export default function InputForm({
       <div className="flex flex-col gap-3">
         <label
           className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "#646669" }}
+          style={{ color: "var(--color-text-secondary)" }}
         >
           Profile Type
         </label>
@@ -108,9 +116,9 @@ export default function InputForm({
                 onClick={() => onTypeChange(value)}
                 disabled={loading}
                 style={{
-                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
-                  color: selected ? "#e2b714" : "#646669",
-                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
+                  color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
+                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
                   borderWidth: "1px",
                   borderLeftWidth: "2px",
                   opacity: loading ? 0.5 : 1,
@@ -121,16 +129,16 @@ export default function InputForm({
                 className="flex min-h-16 items-center px-4 py-4 text-left text-sm uppercase tracking-[0.2em] transition-colors duration-200"
                 onMouseEnter={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#1a1a1a";
-                    e.currentTarget.style.borderLeftColor = "#e2b714";
-                    e.currentTarget.style.color = "#e2b714";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
+                    e.currentTarget.style.color = "var(--color-accent)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#0e0e0e";
-                    e.currentTarget.style.borderLeftColor = "#2c2e31";
-                    e.currentTarget.style.color = "#646669";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
+                    e.currentTarget.style.color = "var(--color-text-secondary)";
                   }
                 }}
               >
@@ -144,59 +152,75 @@ export default function InputForm({
       <div className="flex flex-col gap-3">
         <label
           className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "#646669" }}
+          style={{ color: "var(--color-text-secondary)" }}
         >
-          {type === "resume" ? "Resume Text" : "Profile URL"}
+          {type === "resume" ? "Resume Text" : type === "linkedin" ? "LinkedIn Profile Text" : "Profile URL"}
         </label>
-        {type === "resume" ? (
+        {isUploadType ? (
           <div className="flex flex-col gap-3">
+            {type === "linkedin" && (
+              <p
+                className="text-[10px] uppercase tracking-[0.18em]"
+                style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
+              >
+                Open your LinkedIn profile → More → Save to PDF, then upload it here.
+              </p>
+            )}
             <input
               type="file"
               accept=".pdf,.txt,application/pdf,text/plain"
-              onChange={handleResumeFileChange}
+              onChange={handleFileChange}
               disabled={loading}
-              className="w-full text-sm text-[#646669] file:mr-4 file:cursor-pointer file:border-0 file:bg-[#0e0e0e] file:px-4 file:py-3 file:text-sm file:font-bold file:uppercase file:tracking-[0.2em] file:text-[#d1d0c5]"
+              className="w-full text-sm text-[var(--color-text-secondary)] file:mr-4 file:cursor-pointer file:border-0 file:bg-[var(--color-bg-surface)] file:px-4 file:py-3 file:text-sm file:font-bold file:uppercase file:tracking-[0.2em] file:text-[var(--color-text-primary)]"
               style={{
-                borderBottom: "1px solid #2c2e31",
+                borderBottom: "1px solid var(--color-border)",
                 paddingBottom: "1rem",
                 fontFamily: "'Courier New', monospace",
               }}
             />
             <textarea
               style={{
-                backgroundColor: "#000000",
-                borderColor: "#2c2e31",
-                borderBottomColor: "#2c2e31",
+                backgroundColor: "var(--color-bg-primary)",
+                borderColor: "var(--color-border)",
+                borderBottomColor: "var(--color-border)",
                 borderLeftWidth: 0,
                 borderRightWidth: 0,
                 borderTopWidth: 0,
                 borderBottomWidth: "1px",
-                color: "#d1d0c5",
+                color: "var(--color-text-primary)",
                 fontFamily: "'Courier New', monospace",
                 borderRadius: "0px",
               }}
               className="w-full min-h-44 px-0 py-5 text-sm leading-7 focus:outline-none focus:shadow-none transition-colors duration-200 resize-y"
-              placeholder="or paste resume text here"
-              value={resumeText}
+              placeholder={type === "resume" ? "or paste resume text here" : "or paste profile text here"}
+              value={pastedText}
               onChange={(e) => {
-                setResumeText(e.target.value);
+                setPastedText(e.target.value);
+                setUploadError("");
                 onUrlChange(e.target.value);
               }}
               onKeyDown={handleKey}
               disabled={loading}
               onFocus={(e) => {
-                e.target.style.borderBottomColor = "#e2b714";
+                e.target.style.borderBottomColor = "var(--color-accent)";
               }}
               onBlur={(e) => {
-                e.target.style.borderBottomColor = "#2c2e31";
+                e.target.style.borderBottomColor = "var(--color-border)";
               }}
             />
-            {resumeStatus ? (
+            {uploadError ? (
               <p
                 className="text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "#646669", fontFamily: "'Courier New', monospace" }}
+                style={{ color: "var(--color-accent)", fontFamily: "'Courier New', monospace" }}
               >
-                {resumeStatus}
+                {uploadError}
+              </p>
+            ) : uploadStatus ? (
+              <p
+                className="text-[10px] uppercase tracking-[0.18em]"
+                style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
+              >
+                {uploadStatus}
               </p>
             ) : null}
           </div>
@@ -204,43 +228,35 @@ export default function InputForm({
           <input
             type="url"
             style={{
-              backgroundColor: "#000000",
-              borderColor: "#2c2e31",
-              borderBottomColor: "#2c2e31",
+              backgroundColor: "var(--color-bg-primary)",
+              borderColor: "var(--color-border)",
+              borderBottomColor: "var(--color-border)",
               borderLeftWidth: 0,
               borderRightWidth: 0,
               borderTopWidth: 0,
               borderBottomWidth: "1px",
-              color: "#d1d0c5",
+              color: "var(--color-text-primary)",
               fontFamily: "'Courier New', monospace",
               borderRadius: "0px",
             }}
             className="w-full px-0 py-5 text-sm focus:outline-none focus:shadow-none transition-colors duration-200"
-            placeholder={
-              type === "github"
-                ? "https://github.com/username"
-                : type === "linkedin"
-                ? "https://linkedin.com/in/name"
-                : type === "instagram"
-                ? "https://instagram.com/username"
-                : "https://github.com/username"
-            }
+            placeholder={type === "instagram" ? "https://instagram.com/username" : "https://github.com/username"}
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             onKeyDown={handleKey}
             disabled={loading}
             onFocus={(e) => {
-              e.target.style.borderBottomColor = "#e2b714";
+              e.target.style.borderBottomColor = "var(--color-accent)";
             }}
             onBlur={(e) => {
-              e.target.style.borderBottomColor = "#2c2e31";
+              e.target.style.borderBottomColor = "var(--color-border)";
             }}
           />
         )}
         <style>{`
           input::placeholder,
           textarea::placeholder {
-            color: #646669;
+            color: var(--color-text-secondary);
           }
         `}</style>
       </div>
@@ -249,8 +265,8 @@ export default function InputForm({
         onClick={onSubmit}
         disabled={loading || !url.trim()}
         style={{
-          backgroundColor: loading || !url.trim() ? "#2c2e31" : "#e2b714",
-          color: loading || !url.trim() ? "#646669" : "#000000",
+          backgroundColor: loading || !url.trim() ? "var(--color-border)" : "var(--color-accent)",
+          color: loading || !url.trim() ? "var(--color-text-secondary)" : "var(--color-bg-primary)",
           opacity: loading || !url.trim() ? 0.5 : 1,
           cursor: loading || !url.trim() ? "not-allowed" : "pointer",
           fontFamily: "'Courier New', monospace",
@@ -259,13 +275,13 @@ export default function InputForm({
         className="w-full py-4 font-bold text-sm uppercase tracking-[0.15em] transition-all duration-200 active:scale-[0.99]"
         onMouseEnter={(e) => {
           if (!loading && url.trim()) {
-            e.currentTarget.style.backgroundColor = "#f0c832";
+            e.currentTarget.style.backgroundColor = "var(--color-accent-hover)";
             e.currentTarget.style.filter = "brightness(1.03)";
           }
         }}
         onMouseLeave={(e) => {
           if (!loading && url.trim()) {
-            e.target.style.backgroundColor = "#e2b714";
+            e.target.style.backgroundColor = "var(--color-accent)";
             e.currentTarget.style.filter = "brightness(1)";
           }
         }}
@@ -276,8 +292,8 @@ export default function InputForm({
               className="inline-block w-4 h-4 animate-spin"
               style={{
                 borderWidth: "1px",
-                borderColor: "#646669",
-                borderTopColor: "#d1d0c5",
+                borderColor: "var(--color-text-secondary)",
+                borderTopColor: "var(--color-text-primary)",
                 borderRadius: "2px",
               }}
             />
@@ -291,7 +307,7 @@ export default function InputForm({
       <div className="flex flex-col gap-3">
         <label
           className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "#646669" }}
+          style={{ color: "var(--color-text-secondary)" }}
         >
           Severity
         </label>
@@ -306,9 +322,9 @@ export default function InputForm({
                 onClick={() => onSeverityChange(value)}
                 disabled={loading}
                 style={{
-                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
-                  color: selected ? "#e2b714" : "#646669",
-                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
+                  color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
+                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
                   borderWidth: "1px",
                   borderLeftWidth: "2px",
                   opacity: loading ? 0.5 : 1,
@@ -319,16 +335,16 @@ export default function InputForm({
                 className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
                 onMouseEnter={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#1a1a1a";
-                    e.currentTarget.style.borderLeftColor = "#e2b714";
-                    e.currentTarget.style.color = "#e2b714";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
+                    e.currentTarget.style.color = "var(--color-accent)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#0e0e0e";
-                    e.currentTarget.style.borderLeftColor = "#2c2e31";
-                    e.currentTarget.style.color = "#646669";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
+                    e.currentTarget.style.color = "var(--color-text-secondary)";
                   }
                 }}
               >
@@ -342,57 +358,117 @@ export default function InputForm({
       <div className="flex flex-col gap-3">
         <label
           className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "#646669" }}
+          style={{ color: "var(--color-text-secondary)" }}
         >
-          Model
+          Persona
         </label>
-        <div className="grid grid-cols-3 gap-3">
-          {models.map(({ value, label }) => {
-            const selected = model === value;
+        <div className="grid grid-cols-1 gap-3">
+          {PERSONAS.map(({ value, name, tagline }) => {
+            const selected = persona === value;
 
             return (
               <button
                 key={value}
                 type="button"
-                onClick={() => onModelChange(value)}
+                onClick={() => onPersonaChange(value)}
                 disabled={loading}
                 style={{
-                  backgroundColor: selected ? "#1a1a1a" : "#0e0e0e",
-                  color: selected ? "#e2b714" : "#646669",
-                  borderColor: selected ? "#e2b714" : "#2c2e31",
+                  backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
+                  borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
                   borderWidth: "1px",
                   borderLeftWidth: "2px",
                   opacity: loading ? 0.5 : 1,
                   cursor: loading ? "not-allowed" : "pointer",
                   borderRadius: "2px",
-                  fontFamily: "'Courier New', monospace",
                 }}
-                className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
+                className="flex flex-col items-start gap-1 px-4 py-3 text-left transition-colors duration-200"
                 onMouseEnter={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#1a1a1a";
-                    e.currentTarget.style.borderLeftColor = "#e2b714";
-                    e.currentTarget.style.color = "#e2b714";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-accent)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!loading && !selected) {
-                    e.currentTarget.style.backgroundColor = "#0e0e0e";
-                    e.currentTarget.style.borderLeftColor = "#2c2e31";
-                    e.currentTarget.style.color = "#646669";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
+                    e.currentTarget.style.borderLeftColor = "var(--color-border)";
                   }
                 }}
               >
-                {label}
+                <span
+                  className="text-sm font-bold uppercase tracking-[0.15em]"
+                  style={{ color: selected ? "var(--color-accent)" : "var(--color-text-primary)", fontFamily: "'Courier New', monospace" }}
+                >
+                  {name}
+                </span>
+                <span
+                  className="text-xs"
+                  style={{ color: "var(--color-text-secondary)", fontFamily: "'Courier New', monospace" }}
+                >
+                  {tagline}
+                </span>
               </button>
             );
           })}
         </div>
       </div>
 
+      {import.meta.env.DEV && (
+        <div className="flex flex-col gap-3">
+          <label
+            className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Model (dev only)
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            {models.map(({ value, label }) => {
+              const selected = model === value;
+
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onModelChange(value)}
+                  disabled={loading}
+                  style={{
+                    backgroundColor: selected ? "var(--color-bg-hover)" : "var(--color-bg-surface)",
+                    color: selected ? "var(--color-accent)" : "var(--color-text-secondary)",
+                    borderColor: selected ? "var(--color-accent)" : "var(--color-border)",
+                    borderWidth: "1px",
+                    borderLeftWidth: "2px",
+                    opacity: loading ? 0.5 : 1,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    borderRadius: "2px",
+                    fontFamily: "'Courier New', monospace",
+                  }}
+                  className="flex min-h-12 items-center justify-center px-3 py-3 text-center text-xs uppercase tracking-[0.2em] transition-colors duration-200"
+                  onMouseEnter={(e) => {
+                    if (!loading && !selected) {
+                      e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                      e.currentTarget.style.borderLeftColor = "var(--color-accent)";
+                      e.currentTarget.style.color = "var(--color-accent)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading && !selected) {
+                      e.currentTarget.style.backgroundColor = "var(--color-bg-surface)";
+                      e.currentTarget.style.borderLeftColor = "var(--color-border)";
+                      e.currentTarget.style.color = "var(--color-text-secondary)";
+                    }
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <p
         className="text-center text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "#646669" }}
+        style={{ color: "var(--color-text-secondary)" }}
       >
         cmd + enter to submit
       </p>

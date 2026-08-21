@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import InputForm from "./components/InputForm";
 import RoastCard from "./components/RoastCard";
 import { getRoast, getRateLimitStatus } from "./lib/openai";
+import { DEFAULT_PERSONA, personaName } from "./lib/personas";
 
-const SLOW_SCRAPE_TYPES = new Set(["linkedin", "instagram"]);
+// linkedin no longer scrapes server-side at all (PDF upload instead, see api/roast.js) —
+// only instagram still goes through a slow Apify poll.
+const SLOW_SCRAPE_TYPES = new Set(["instagram"]);
 const SLOW_NOTICE_DELAY_MS = 5000;
 
 function formatCountdown(msRemaining) {
@@ -17,10 +20,12 @@ export default function App() {
   const [url, setUrl] = useState("");
   const [type, setType] = useState("github");
   const [severity, setSeverity] = useState("medium");
+  const [persona, setPersona] = useState(DEFAULT_PERSONA);
   const [model, setModel] = useState("gpt-4o");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [errorRetryable, setErrorRetryable] = useState(false);
   const [showSlowNotice, setShowSlowNotice] = useState(false);
   const [rateLimitStatus, setRateLimitStatus] = useState(null);
   const [now, setNow] = useState(() => Date.now());
@@ -51,16 +56,28 @@ export default function App() {
     if (!url.trim() || loading) return;
     setLoading(true);
     setError(null);
+    setErrorRetryable(false);
     setResult(null);
     setShowSlowNotice(false);
     try {
-      const data = await getRoast(url, type, severity, model, {
+      // Production users can't select a model (the picker only renders in dev — see
+      // InputForm.jsx) — don't send a `model` field at all outside dev, so there's
+      // nothing for a modified client to spoof. The server pins production regardless
+      // (resolveProductionSafeModelOption in api/roast.js is the real security boundary).
+      // Persona, unlike model, is a real production feature and always sent — the
+      // server validates it via resolvePersona regardless (api/_lib/prompts/personas.js).
+      const data = await getRoast(url, type, severity, import.meta.env.DEV ? model : undefined, persona, {
         onRoastChunk: (text) => setResult((prev) => ({ ...prev, roast: text, tips: prev?.tips || [] })),
       });
       setResult(data);
       if (data.rateLimit) setRateLimitStatus(data.rateLimit);
     } catch (err) {
+      // No canned roast on failure anymore (see api/roast.js) — show the real message,
+      // and clear any partial roast text a mid-stream failure may have already rendered
+      // so it doesn't linger next to the error.
+      setResult(null);
       setError(err.message ?? "Something went wrong.");
+      setErrorRetryable(Boolean(err.retryable));
       if (err.rateLimit) setRateLimitStatus(err.rateLimit);
     } finally {
       setLoading(false);
@@ -70,29 +87,29 @@ export default function App() {
   return (
     <div
       className="min-h-screen flex flex-col items-center px-4 py-20"
-      style={{ backgroundColor: "#000000" }}
+      style={{ backgroundColor: "var(--color-bg-primary)" }}
     >
       <div className="w-full max-w-3xl mb-14 flex flex-col items-start gap-3">
         <div
           className="pl-4"
           style={{
-            borderLeft: "2px solid #e2b714",
+            borderLeft: "2px solid var(--color-accent)",
           }}
         >
           <h1
             className="text-5xl font-black tracking-[-0.08em] uppercase leading-none"
-            style={{ color: "#e2b714" }}
+            style={{ color: "var(--color-accent)" }}
           >
             Roastify
           </h1>
           <div
             className="mt-3 h-px w-24"
-            style={{ backgroundColor: "#e2b714" }}
+            style={{ backgroundColor: "var(--color-accent)" }}
           />
         </div>
         <p
           className="text-sm sm:text-base tracking-[0.02em]"
-          style={{ color: "#646669" }}
+          style={{ color: "var(--color-text-secondary)" }}
         >
           Paste a profile URL and let the machine do the judging.
         </p>
@@ -106,6 +123,8 @@ export default function App() {
           onTypeChange={setType}
           severity={severity}
           onSeverityChange={setSeverity}
+          persona={persona}
+          onPersonaChange={setPersona}
           model={model}
           onModelChange={setModel}
           onSubmit={handleSubmit}
@@ -115,9 +134,11 @@ export default function App() {
         {rateLimitStatus && (
           <p
             className="text-center text-[10px] uppercase tracking-[0.18em]"
-            style={{ color: rateLimitStatus.remaining === 0 ? "#e2b714" : "#646669" }}
+            style={{ color: rateLimitStatus.remaining === 0 ? "var(--color-accent)" : "var(--color-text-secondary)" }}
           >
-            {rateLimitStatus.remaining > 0
+            {rateLimitStatus.unlimited
+              ? "rate limit bypassed (dev)"
+              : rateLimitStatus.remaining > 0
               ? `${rateLimitStatus.remaining}/${rateLimitStatus.limit} roasts left this hour`
               : rateLimitStatus.reset
               ? `rate limit reached — resets in ${formatCountdown(rateLimitStatus.reset - now)}`
@@ -128,7 +149,7 @@ export default function App() {
         {showSlowNotice && (
           <p
             className="text-center text-[10px] uppercase tracking-[0.18em]"
-            style={{ color: "#646669" }}
+            style={{ color: "var(--color-text-secondary)" }}
           >
             still scraping the profile, this can take up to ~30s — hang tight
           </p>
@@ -136,26 +157,52 @@ export default function App() {
 
         {error && (
           <div
-            className="border p-4 text-sm"
+            className="border p-4 text-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
             style={{
-              borderColor: "#e2b714",
-              backgroundColor: "#0d0d0d",
-              color: "#e2b714",
+              borderColor: "var(--color-accent)",
+              backgroundColor: "var(--color-bg-tertiary)",
+              color: "var(--color-accent)",
               borderRadius: "2px",
             }}
           >
-            {error}
+            <span>{error}</span>
+            {errorRetryable && (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading}
+                className="shrink-0 border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition-colors duration-200"
+                style={{
+                  borderColor: "var(--color-accent)",
+                  backgroundColor: "transparent",
+                  color: "var(--color-accent)",
+                  borderRadius: "2px",
+                  fontFamily: "'Courier New', monospace",
+                  opacity: loading ? 0.5 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
+              >
+                try again
+              </button>
+            )}
           </div>
         )}
 
-        {result && <RoastCard roast={result.roast} tips={result.tips} modelUsed={result.modelUsed} />}
+        {result && (
+          <RoastCard
+            roast={result.roast}
+            tips={result.tips}
+            modelUsed={result.modelUsed}
+            personaName={personaName(result.persona)}
+          />
+        )}
       </div>
 
       <footer
         className="mt-24 text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "#646669" }}
+        style={{ color: "var(--color-text-secondary)" }}
       >
-        developed by Kavyaansh Kundu, Fravash Dhruv & Sarthak Mohite · powered by GPT-4o / Cohere Command
+        developed by Sarthak Mohite · powered by Groq
       </footer>
     </div>
   );

@@ -12,10 +12,23 @@ function parseSseRecord(rawEvent) {
   }
 }
 
-// `/api/roast` scrape failures respond with a plain JSON fallback; once scraping succeeds
-// it switches to an SSE stream — a "roast" event per text chunk as it's generated, followed
-// by one "complete" event with the final { roast, tips, modelUsed, rateLimit }. EventSource
-// can't be used here since it only supports GET, so the stream is parsed by hand.
+// Builds an Error from the { error: { code, message, retryable } } envelope shared with
+// the backend (api/_lib/errors.js) — used for both plain JSON error responses and SSE
+// `error` frames, so both paths produce an Error with the same shape for callers to catch.
+function errorFromEnvelope(envelope, rateLimit, fallbackMessage = "Something went wrong.") {
+  const error = new Error(envelope?.message || fallbackMessage);
+  error.code = envelope?.code ?? null;
+  error.retryable = envelope?.retryable ?? false;
+  error.rateLimit = rateLimit ?? null;
+  return error;
+}
+
+// `/api/roast` scrape/LLM-setup failures respond with a plain JSON error envelope; once
+// the LLM call is accepted it switches to an SSE stream — a "roast" event per text chunk
+// as it's generated, followed by either one "complete" event with the final
+// { roast, tips, modelUsed, rateLimit } or one "error" event (envelope, no canned roast)
+// if something failed after streaming had already started. EventSource can't be used
+// here since it only supports GET, so the stream is parsed by hand.
 async function consumeRoastStream(res, onRoastChunk) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -39,6 +52,8 @@ async function consumeRoastStream(res, onRoastChunk) {
         onRoastChunk?.(parsed.data.text);
       } else if (parsed.event === "complete") {
         result = parsed.data;
+      } else if (parsed.event === "error") {
+        throw errorFromEnvelope(parsed.data?.error, parsed.data?.rateLimit);
       }
     }
   }
@@ -50,11 +65,20 @@ async function consumeRoastStream(res, onRoastChunk) {
   return result;
 }
 
-export async function getRoast(url, type, severity = "medium", model = "gpt-4o", { onRoastChunk } = {}) {
+export async function getRoast(url, type, severity = "medium", model, persona, { onRoastChunk } = {}) {
+  // No default for `model` — a caller that explicitly passes `undefined` (production,
+  // where the picker is hidden) must get a request with no `model` field at all, not
+  // one silently re-filled with a default. The server pins the model regardless; this
+  // is just about not sending a field there's no UI for. `persona`, unlike `model`, is
+  // always sent when provided — it's a real production feature, not a dev-only toggle.
+  const body = { url, type, severity };
+  if (model) body.model = model;
+  if (persona) body.persona = persona;
+
   const res = await fetch("/api/roast", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, type, severity, model })
+    body: JSON.stringify(body)
   });
 
   if ((res.headers.get("Content-Type") || "").includes("text/event-stream")) {
@@ -64,9 +88,8 @@ export async function getRoast(url, type, severity = "medium", model = "gpt-4o",
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    const error = new Error(data?.error || `Failed to fetch roast: ${res.statusText}`);
+    const error = errorFromEnvelope(data?.error, data?.rateLimit, `Failed to fetch roast: ${res.statusText}`);
     error.status = res.status;
-    error.rateLimit = data?.rateLimit ?? null;
     throw error;
   }
 
