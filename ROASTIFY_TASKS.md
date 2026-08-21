@@ -718,7 +718,7 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   position landed exactly at the Output section's true top edge, not a clamped
   approximation.
 
-## 12. UI scale-down (2026-08-21, adjusted 90% → 95% same day)
+## 12. UI scale-down (2026-08-21, adjusted 90% → 95% → 97% same day)
 
 - [x] First attempt (`font-size: 90%` on `html, body, #root`, as literally requested)
   was empirically verified to have **zero visible effect** — every font-size and
