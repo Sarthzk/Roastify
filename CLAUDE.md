@@ -449,8 +449,8 @@ the full rationale per breakpoint if tuning any of this further.
 
 ### Deployment
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining
-Apify-scraped type; `linkedin` no longer scrapes) plus the OpenAI call has to fit inside that window,
-which is why the Apify poll budget is kept short.
+Apify-scraped type; `linkedin` no longer scrapes) plus the LLM call (Groq in production; see "Model
+selection" above) has to fit inside that window, which is why the Apify poll budget is kept short.
 
 ### Model eval harness
 `scripts/eval-models.mjs` (not part of the deployed app — run manually, never in CI) compares the

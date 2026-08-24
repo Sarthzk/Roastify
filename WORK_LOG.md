@@ -6,6 +6,59 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-08-23
+
+### Cleanup pass: dead dependencies, zoom/breakpoint audit, doc accuracy
+No new features. Full detail in `ROASTIFY_TASKS.md` Section 13; summary here.
+
+**Dead dependencies**: `framer-motion` removed — grepped `src/` first and confirmed zero
+references anywhere, it was never actually used. Tailwind (`tailwindcss`,
+`@tailwindcss/vite`) removed too — an inventory of every `className` in `src/` turned up
+exactly three real Tailwind utility-class usages in the entire app (`w-full flex
+flex-col`, `hidden`, `absolute inset-0 w-4 h-4 cursor-pointer opacity-0`), everything
+else already being the hand-written CSS class system from the v2 redesign. Replaced
+those three with equivalent plain CSS classes (`.input-form`, `.hidden`,
+`.fix-row-checkbox-input`) in `src/index.css`, then removed the `@import`, the Vite
+plugin, and both packages. Bundle: CSS 26.06 kB → 17.92 kB raw (−31%), JS essentially
+unchanged (neither package had a JS-bundle footprint to begin with — Tailwind's a
+build-time CSS tool, framer-motion was dead weight already tree-shaken to nothing).
+Verified the UI renders identically in a real browser: pixel-comparable screenshots,
+the hidden file input still computes `display: none`, and the fix-tip checkbox's
+hidden-input styling matches the old Tailwind values exactly and still toggles/updates
+the counter correctly on click. 95/95 tests, lint, and build all clean (frontend has no
+test suite, so none of this could have touched it either way).
+
+**Zoom vs. breakpoints — checked the premise, found a bigger bug instead**: confirmed
+empirically (not assumed) that `window.innerWidth`/`matchMedia()` are unaffected by the
+`zoom: 97%` rule — toggling zoom on/off at a fixed window size produced identical
+readings both times, so `@media` breakpoints do fire at the real, physical viewport
+width exactly as the task's premise stated. But investigating that turned up something
+the user didn't know about: `zoom: 97%` on the selector `html, body, #root` applies the
+declaration to *three* separate nested ancestors (html contains body contains #root),
+and CSS `zoom` compounds through nested application. Measured `.hero`'s internal layout
+width vs. its rendered/visual width and got a ratio of 0.9127 — `0.97³` to four
+significant figures, not a flat 0.97. Confirmed it wasn't a fluke by forcing zoom back
+to 1 on `body`/`#root` while leaving `html` alone: the ratio came back to exactly
+0.9703, a clean single 97%. **The page is actually rendering at ≈91.3% scale, not the
+intended 97%.** Given that, worked out the breakpoint correction math both ways — using
+the real current 91.3% effective zoom, and using a hypothetical fixed flat 97% — since
+they diverge by 40–50px per breakpoint and the user needs to decide on the compounding
+bug before the breakpoint numbers themselves are worth changing. Reported both, did not
+touch the zoom rule or the breakpoints, per instruction.
+
+**Documentation accuracy**: `ROASTIFY_TASKS.md`'s own header still said "calling GPT-4o,
+Apify for LinkedIn/Instagram scraping" — fixed to Groq (production-pinned) + Apify for
+Instagram only. Swept README.md and CLAUDE.md for the same class of staleness — README
+was already accurate (prior sessions' doc passes had kept it current); CLAUDE.md had one
+real miss, the "Deployment" section's `maxDuration` note still said "the OpenAI call"
+from before the Groq migration, fixed to "the LLM call (Groq in production...)". Also
+fixed an adjacent stale "OpenAI/Apify" reference in `ROASTIFY_TASKS.md`'s own privacy-note
+backlog item while there. Resolved the long-open Instagram legal/compliance item:
+decision is to keep scraping as-is (its Apify actor actually works, unlike LinkedIn's,
+and there's no realistic PDF/upload equivalent to swap to) — documented the reasoning in
+README's feature list (public profiles only, 24h cache with no further persistence,
+`INSTAGRAM_ENABLED` as the fast no-deploy removal path) and marked the task item resolved.
+
 ## 2026-08-21
 
 ### Share roast button hover fix

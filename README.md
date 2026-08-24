@@ -25,7 +25,13 @@ Runs on Groq's free tier, fast enough that the roast streams in live as it's wri
   paste the text — goes after your buzzwords and professional facade. Not a live URL
   scrape: LinkedIn blocks unauthenticated profile reads, so this is the only reliable way
   in
-- **Instagram** — critiques your aesthetic and engagement
+- **Instagram** — critiques your aesthetic and engagement. Scrapes public profiles only
+  (a private or nonexistent account fails with a clear, honest error, never a silent
+  guess); the scrape result is cached for 24h and isn't persisted anywhere beyond that.
+  Kept as a live scrape rather than moved to upload like LinkedIn — Instagram's Apify
+  actor actually works, unlike LinkedIn's — but if that ever changes,
+  `INSTAGRAM_ENABLED=false` turns it off server-side and hides the source in the UI,
+  no deploy required (see `.env.example`)
 - **Resume** — drag in a PDF or paste text and watch it burn
 
 ---

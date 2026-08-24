@@ -154,7 +154,7 @@ export default function InputForm({
   }
 
   return (
-    <div className="w-full flex flex-col">
+    <div className="input-form">
       {/* 4. Source row */}
       <section className="row">
         <div className="row-label">Source</div>

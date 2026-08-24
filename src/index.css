@@ -1,5 +1,3 @@
-@import "tailwindcss";
-
 /* ===========================================================================
    Tokens — the v2 visual redesign's palette (colors copied verbatim from the
    Claude Design handoff, "Roastify Enhanced v2.dc.html"). Every color below
@@ -113,6 +111,11 @@ a:hover {
   flex-direction: column;
   background: var(--ground);
   color: var(--ink);
+}
+.input-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===========================================================================
@@ -401,6 +404,9 @@ a:hover {
 }
 
 /* 5b. Input row — upload variant */
+.hidden {
+  display: none;
+}
 .file-body {
   padding: 24px 28px;
   display: flex;
@@ -906,6 +912,17 @@ a:hover {
   line-height: 1;
   color: #000;
   transition: background-color 0.15s, border-color 0.15s;
+}
+/* Visually hidden but still a real, focusable, clickable checkbox — sits over the
+   styled box above via .fix-row-checkbox's position: relative, for free keyboard and
+   screen-reader support. */
+.fix-row-checkbox-input {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  opacity: 0;
 }
 .fix-row.is-checked .fix-row-checkbox {
   background: var(--accent);

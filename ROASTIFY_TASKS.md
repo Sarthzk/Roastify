@@ -1,8 +1,10 @@
 # Roastify — Improvement Tasks
 
-Context: React + Vite app, Vercel serverless function (`api/roast.js`) calling GPT-4o,
-Apify for LinkedIn/Instagram scraping, GitHub REST API for GitHub, Upstash Redis for
-rate limiting. Live at https://roastify-two.vercel.app/
+Context: React + Vite app, Vercel serverless function (`api/roast.js`) calling Groq
+(`gpt-oss-120b`, production-pinned; GPT-4o survives only as a dev-only comparison
+option), Apify for Instagram scraping only (LinkedIn moved to PDF upload — see Section
+9), GitHub REST API for GitHub, Upstash Redis for rate limiting. Live at
+https://roastify-two.vercel.app/
 
 Work through these roughly in order — each item is scoped to be a self-contained change.
 Run `npm run lint` and `npm run build` after each section.
@@ -116,15 +118,17 @@ Run `npm run lint` and `npm run build` after each section.
   Replaced with PDF upload/paste (the user exports their own profile via LinkedIn's
   "More → Save to PDF" and uploads it, same mechanism as the resume flow) — no scraping,
   no legal grey area, 100% reliable. See Section 9 and `CLAUDE.md`'s "Request flow".
-- [ ] **Instagram — still undecided.** Unlike LinkedIn, Instagram's Apify actor does
-  work today, so this is a live decision, not a settled one: keep scraping as-is, add a
-  visible disclaimer, or drop Instagram scraping too (its own PDF/upload equivalent
-  doesn't really exist — a screenshot upload would need a vision-capable model, a bigger
-  change than LinkedIn's swap). Document whichever way this goes (e.g. in the README)
-  rather than leaving it implicit.
-- [ ] Add a short privacy note on the site covering what's sent to OpenAI/Apify
-  and confirming no profile data is persisted server-side beyond ephemeral
-  rate-limit counters.
+- [x] **Instagram — decided, resolved 2026-08-23: keep scraping as-is.** Unlike
+  LinkedIn, Instagram's Apify actor actually works, so dropping it isn't forced the way
+  LinkedIn's was — and there's no PDF/upload equivalent to swap to anyway (a screenshot
+  upload would need a vision-capable model, a materially bigger change than LinkedIn's
+  PDF swap). Reasoning documented in README's "What it supports": public profiles only
+  (a private/nonexistent account fails honestly, never a silent guess), scraped data
+  cached 24h and not persisted beyond that, and `INSTAGRAM_ENABLED` (see Section 10) as
+  the fast, no-deploy removal path if the calculus ever changes.
+- [ ] Add a short privacy note on the site covering what's sent to Groq/Apify and
+  confirming no profile data is persisted server-side beyond ephemeral rate-limit
+  counters and the 24h Instagram/GitHub scrape cache.
 
 ### Documentation
 - [x] Expand the README with real setup steps and the `.env.example` reference.
@@ -738,3 +742,93 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   at the rendering level regardless of what units the CSS uses — confirmed via
   `document.body.scrollHeight` dropping from 1567px to exactly 1410px (1567 × 0.9) and a
   visual screenshot pass across hero/source/voice/roast-card/footer for alignment.
+
+## 13. Cleanup pass: dead dependencies, zoom/breakpoint audit, doc accuracy (2026-08-23)
+
+Goal: no new features — remove unused dependencies, check a real correctness question
+about the shipped `zoom: 97%` rule against the responsive breakpoints, and fix stale
+documentation. Net deletion.
+
+### Dead dependencies removed
+- [x] **`framer-motion`**: zero references anywhere in `src/` (confirmed by grep before
+  removing) — never used. Removed from `package.json` via `npm uninstall`.
+- [x] **Tailwind** (`tailwindcss`, `@tailwindcss/vite`): the whole app used exactly three
+  utility-class usages total (`w-full flex flex-col` on `InputForm`'s root wrapper,
+  `hidden` on the file input, `absolute inset-0 w-4 h-4 cursor-pointer opacity-0` on the
+  visually-hidden fix-checkbox) — everything else is the hand-written CSS class system
+  from the v2 redesign. Replaced each with an equivalent plain CSS class in
+  `src/index.css` (`.input-form`, `.hidden`, `.fix-row-checkbox-input`), then removed the
+  `@import "tailwindcss"` line, the `@tailwindcss/vite` plugin from `vite.config.js`, and
+  both packages from `package.json`.
+- [x] **Bundle size, before → after** (`npm run build`): CSS 26.06 kB → 17.92 kB raw
+  (−31.2%), 5.76 kB → 3.75 kB gzip (−34.9%) — Tailwind's base/reset/utility generation is
+  gone. JS 1,028.71 kB → 1,028.67 kB raw (effectively flat — `framer-motion` was never
+  actually bundled since nothing imported it, and Tailwind is a build-time CSS tool with
+  no JS runtime footprint).
+- [x] **Verified the UI renders identically** — the one item here with real regression
+  risk. Live in a real browser: full page screenshot compared against the pre-removal
+  render (pixel-identical layout/spacing); confirmed the hidden file input's
+  `getComputedStyle().display` is still `"none"`; confirmed the fix-tip checkbox's
+  hidden-input styling matches the old Tailwind values exactly (`position: absolute`,
+  `opacity: 0`, `cursor: pointer`, `16px` square) and that clicking it still toggles
+  `.is-checked` and updates the fixes counter correctly.
+- [x] 95/95 tests passing (frontend has no test suite, so dependency/CSS changes
+  couldn't touch it either way). `npm run lint` and `npm run build` both clean.
+
+### Zoom vs. breakpoints — a real bug found, not just an offset
+- [x] Checked the premise directly rather than assuming: is `window.innerWidth` (what
+  `@media` queries evaluate against) affected by the `zoom: 97%` rule on
+  `html, body, #root`? **No** — confirmed empirically by toggling zoom off/on at a fixed
+  window size and reading `window.innerWidth`/`matchMedia()` both times: identical in
+  both cases. Media queries fire at the real, physical viewport width; zoom only
+  rescales what's rendered inside it. This matches the premise in the task description.
+- [x] **But a bigger, unrelated bug turned up while checking this**: `zoom: 97%` on the
+  selector `html, body, #root` doesn't apply 97% zoom once — it applies the *same*
+  declaration to three separate, nested ancestor elements (`html` contains `body`
+  contains `#root`), and CSS `zoom` compounds through nested application the way
+  `transform: scale()` would. Measured directly: `.hero`'s internal layout width
+  (`offsetWidth`, what content lays out against) vs. its rendered/visual width
+  (`getBoundingClientRect().width`, what's actually on screen) differ by a factor of
+  **0.9127, not 0.97** — which is `0.97³` to four significant figures. Confirmed the
+  compounding is real (not a measurement artifact) by forcing zoom to 1 on `body` and
+  `#root` while leaving it at 0.97 on `html` alone: the ratio came back to exactly
+  0.9703, matching a single un-compounded 97%. **The page is actually rendering at
+  ≈91.3% scale, not the intended 97%.** Not fixed — out of scope (the task says don't
+  touch the zoom rule) — but this needs a decision along with the breakpoint question
+  below, since it changes the correction math.
+- [x] **Breakpoint correction, given the above**: because content lays out against
+  `real_viewport_width / effective_zoom` (not the real viewport directly), the same
+  nominal breakpoint value now trips later — at a smaller real viewport — than the
+  design intended, since the compressed content doesn't visually feel cramped until
+  well past where the breakpoint fires. Corrected value = `original × effective_zoom`.
+  Using the actual current effective zoom (0.9127, i.e. the compounded value):
+  | Breakpoint | Original | Corrected (current 91.3% effective zoom) | Corrected (if compounding is separately fixed to a true flat 97%) |
+  | --- | --- | --- | --- |
+  | Desktop → laptop | 1180px | ~1077px | ~1145px |
+  | Laptop → tablet | 900px | ~821px | ~873px |
+  | Tablet → phone | 600px | ~548px | ~582px |
+  | Small phone | 380px | ~347px | ~369px |
+  Not changed — reported only, per instruction. The two right-hand columns diverge by
+  40–50px each, which is why the compounding bug needs a decision before the breakpoint
+  values themselves are worth touching.
+
+### Documentation accuracy
+- [x] `ROASTIFY_TASKS.md`'s own header fixed: "calling GPT-4o, Apify for
+  LinkedIn/Instagram scraping" → Groq (`gpt-oss-120b`, production-pinned) + Apify for
+  Instagram only.
+- [x] Swept README.md and CLAUDE.md for the same class of staleness. README was already
+  fully accurate (Groq/GPT-4o-dev-only/LinkedIn-is-upload all correctly stated already,
+  likely from prior sessions' doc passes). CLAUDE.md had one real miss: the "Deployment"
+  section said the 60s `maxDuration` budget has to fit "the OpenAI call" — a holdover
+  from before the Groq migration; production never calls OpenAI. Fixed to "the LLM call
+  (Groq in production...)".
+- [x] Also fixed, while in the neighborhood: `ROASTIFY_TASKS.md`'s "Add a short privacy
+  note" item said "what's sent to OpenAI/Apify" — same staleness, same fix (→ Groq/Apify).
+- [x] **Resolved the open Instagram legal/compliance item**: decision is to keep
+  Instagram scraping as-is (unlike LinkedIn, its Apify actor actually works, and there's
+  no PDF/upload equivalent to swap to — a screenshot-based alternative would need a
+  vision-capable model, a materially bigger change). Reasoning documented in README's
+  "What it supports" list: public profiles only (private/nonexistent accounts fail with
+  a real error, never a silent guess), scraped data cached 24h and not persisted beyond
+  that, and `INSTAGRAM_ENABLED` (Section 10) as the fast, no-deploy removal path if the
+  calculus changes. Task item marked resolved.

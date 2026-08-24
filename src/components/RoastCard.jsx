@@ -172,7 +172,7 @@ get roasted at roastify.vercel.app`;
                   <span className="fix-row-checkbox">
                     <input
                       type="checkbox"
-                      className="absolute inset-0 w-4 h-4 cursor-pointer opacity-0"
+                      className="fix-row-checkbox-input"
                       checked={isChecked}
                       onChange={() => toggle(i)}
                     />
