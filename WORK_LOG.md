@@ -8,6 +8,59 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Header: account panel + clickable logo
+Two changes, both requested directly (not from a task list).
+
+**Account panel on the username.** The account-delete endpoint (`api/account.js`) turned
+out to already exist and already be wired up — just only from `/privacy`, never from the
+header, which is what prompted the request (no UI for it was visible from the header
+itself). Made the signed-in handle (`.auth-user`, previously a plain `<span>`) a real
+button that opens a panel: avatar (real OAuth avatar image when the provider gave one,
+the existing initial-in-a-box otherwise), display name, email, and which provider
+(`session.user.app_metadata.provider` — reliable since sign-in only ever offers GitHub or
+Google), plus the delete-account control.
+
+Rather than write a second copy of the sign-in dropdown's outside-click/Escape/focus-trap
+logic, extracted it into `src/lib/useDismissiblePanel.js` — a small hook taking a
+container ref, a trigger ref, and an `onDismiss` callback, returning a `close()` that
+both the sign-in panel's and the account panel's own "close" buttons call. `Layout.jsx`
+now calls it twice (once per panel); behavior is identical to before the extraction,
+confirmed live (Tab wraps within the panel's own buttons without escaping to the page,
+Escape closes and returns focus to the trigger).
+
+Delete-account confirm step: click "delete account" (deliberately the quietest element
+in the panel at rest — small, muted, no border, at the bottom, behind a rule — this is a
+panel people open to check which email they're signed in with, not to delete anything)
+expands to a warning ("This permanently deletes your account and every roast on it. This
+can't be undone.") plus "yes, delete everything" / "cancel", reusing the exact button
+classes `/history`'s per-roast delete and `/privacy`'s account-delete already established
+rather than inventing a third confirm-bar style. Found and fixed a real focus gap while
+testing this: both buttons unmount the instant they're clicked (the confirm box replaces
+one, the plain trigger replaces the other), so activating either via keyboard dropped
+focus onto nothing. Added two refs plus a small effect that moves focus onto whichever
+button exists after the swap — "cancel," never the destructive one, when entering
+confirm. `handleDeleteAccount()` mirrors `Privacy.jsx`'s: calls `deleteAccount()`, signs
+out, navigates to `/`. Server-side enforcement is unchanged and already correct — the
+verified JWT, never a client-sent id (see `api/account.js`).
+
+**Logo links home.** `.brand` (the `ROASTIFY` wordmark) is a real `<Link to="/">` now
+instead of a plain `<div>` — a real `href`, so middle-click/cmd-click work natively, and
+clicking it while already on `/` causes no reload (confirmed: set a marker on `window`
+before the click, still present after — a real reload would have wiped it).
+
+**Verification**: found and fixed one real mobile bug while checking this — the account
+panel didn't inherit the ≤600px override that makes the sign-in panel `position: static`
+and full-width; without it, the account panel kept its desktop `position: absolute;
+width: 340px` at 380px, floating misplaced relative to a header that had already reflowed
+under it. Fixed by adding `.account-panel` to that existing rule rather than writing a
+parallel one. Tested against a real signed-in session already present in this browser
+profile's storage (Google-based; not a session this pass created) — real avatar/name/
+email/provider all rendered correctly; reached the delete-confirm UI via both mouse and
+real keyboard (Tab to "delete account", Enter, confirmed focus landed on "cancel") and
+backed out via "cancel" and separately via Escape, in both cases without ever invoking
+the actual delete. Checked at 380px after the mobile fix — no overflow, confirm box text
+wraps cleanly, both buttons stay usable. Lint, tests (156), and build clean.
+
 ### Documentation sweep (GYM_TASKS.md Task 8)
 **`ROASTIFY_TASKS.md`** was 1008 lines, almost entirely a resolved historical record —
 restructured per instruction: a short "Open" section at the very top (readable in under

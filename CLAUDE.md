@@ -494,18 +494,36 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   a rewrite when no matching static file exists, so this doesn't shadow real asset requests.
 - `src/routes/Layout.jsx` owns the state every route needs — `session` (a plain `useState` fed by a
   `supabase.auth.onAuthStateChange` subscription, see "Auth & persistence" above; no auth state
-  library) and `signInOpen` (the header's sign-in dropdown) — and renders the header (brand, nav,
-  auth) and footer around a React Router `<Outlet context={{ session, signIn, signOut, openSignIn }}>`.
-  Every route reads this via `useOutletContext()` rather than prop-drilling. Deliberately *not* where
-  roaster-specific state lives — see `Roaster.jsx` below for why. Nav is two `<NavLink>`s (`roast` /
-  `history`) whose `isActive` styling comes from the current path, not app state. The sign-in dropdown
-  (`signInOpen`) closes itself via the same "adjust state during render" pattern used elsewhere in
-  this codebase (compare against a `prevSession` state var, not a `useEffect`, when `session` flips
-  from falsy to truthy — see the file's own comment) plus a real outside-click/`Escape` listener pair
-  (added/removed in a `useEffect` gated on `signInOpen`, this one legitimately needs to be an effect
-  since it subscribes to `document`, an external system). When `isSupabaseConfigured` is false (see
-  "Auth & persistence" above), the whole nav/auth block is replaced by the original static `no login`
-  tag — there's nothing to route or sign into differently. `<Outlet>` renders inside a `<main
+  library), `signInOpen` (the header's sign-in dropdown), and `accountOpen` (the signed-in handle's
+  own account panel — email, provider, display name/avatar, and account delete) — and renders the
+  header (brand, nav, auth) and footer around a React Router `<Outlet context={{ session, signIn,
+  signOut, openSignIn }}>`. Every route reads this via `useOutletContext()` rather than prop-drilling.
+  Deliberately *not* where roaster-specific state lives — see `Roaster.jsx` below for why. `.brand`
+  (the wordmark) is a real `<Link to="/">`, not a `<div>` — a real `href` so middle-click/cmd-click
+  work, and no special-casing needed for "inert on `/`" since that's just how `<Link>` already behaves.
+  Nav is two `<NavLink>`s (`roast` / `history`) whose `isActive` styling comes from the current path,
+  not app state. Both panels share one mechanism, `src/lib/useDismissiblePanel.js` — a hook taking a
+  container ref (must wrap both the trigger and the panel, so an outside click is measured against the
+  whole unit), a trigger ref, and an `onDismiss` callback, returning a `close()` for the panel's own
+  "close" button to call. Internally: outside-click and `Escape` both dismiss (`Escape` additionally
+  refocuses the trigger; a plain outside click doesn't, since focus is already moving to whatever was
+  clicked), and Tab/Shift+Tab traps focus within the container's own buttons — extracted out of the
+  sign-in dropdown specifically so the account panel didn't need a second copy of this logic. Panel
+  *open/closed* state itself still closes via the existing "adjust state during render" pattern (the
+  `prevSession` comparison — `signInOpen` closes when a session appears, `accountOpen` and the delete-
+  confirm state below close when one disappears, whether from sign-out or a successful account
+  deletion) rather than an effect, since that's a synchronous reset, not a subscription to an external
+  system the way the hook's own listeners are. The account panel's own delete-account control shows a
+  small, deliberately muted "delete account" trigger at rest (this panel gets opened for ordinary
+  reasons — checking which email/provider you're signed in with — far more often than to delete
+  anything) that expands into the same confirm-bar classes `/history`'s per-roast delete and
+  `/privacy`'s account delete already use, then calls the same `deleteAccount()` (`src/lib/openai.js`)
+  those do. Its own confirm/cancel buttons unmount the instant either is clicked, which left focus on
+  a detached node — fixed with two refs and a small effect keyed to the confirm boolean, moving focus
+  onto whichever button exists after the swap ("cancel," never the destructive one, when entering
+  confirm). When `isSupabaseConfigured` is false (see "Auth & persistence" above), the whole nav/auth
+  block is replaced by the original static `no login` tag — there's nothing to route or sign into
+  differently. `<Outlet>` renders inside a `<main
   className="app-main">`, giving every route the standard sticky footer: `.app-root` is
   `min-height: 100dvh` (compensated for `#root`'s `zoom`, see below) and `display: flex;
   flex-direction: column`, and `.app-main` is the `flex: 1` child — not the footer. On a route

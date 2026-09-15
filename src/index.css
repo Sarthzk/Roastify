@@ -280,7 +280,14 @@ a:hover {
   align-items: center;
   gap: 12px;
   padding: 0 22px;
+  background: transparent;
+  border: 0;
   border-left: 1px solid var(--rule-2);
+  cursor: pointer;
+  transition: color 0.18s, background-color 0.18s;
+}
+.auth-user.is-open .auth-handle {
+  color: var(--accent);
 }
 .auth-avatar {
   display: flex;
@@ -317,7 +324,8 @@ a:hover {
   color: var(--accent);
 }
 
-.signin-panel {
+.signin-panel,
+.account-panel {
   position: absolute;
   top: 100%;
   right: 0;
@@ -406,6 +414,78 @@ a:hover {
 }
 .signin-provider-arrow {
   margin-left: auto;
+}
+
+.account-panel-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--rule-2);
+}
+.account-panel-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+.account-panel-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #000;
+  font-size: 15px;
+  font-weight: 700;
+}
+.account-panel-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.account-panel-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-panel-email {
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-panel-provider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-3);
+}
+/* Deliberately the quietest thing in the panel at rest — this is a panel people open for
+   ordinary reasons (checking which email/provider they're signed in with), not to delete
+   their account, so the destructive action shouldn't be the first thing the eye lands
+   on. Once actually invoked, the confirm step below reuses the same visible warning
+   treatment as every other destructive confirm in this app (.hist-row-confirm-yes etc.)
+   — the subordination is about the resting state, not about hiding the real warning. */
+.account-panel-danger {
+  padding: 14px 20px 18px;
+}
+.account-panel-delete-trigger {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.account-panel-delete-trigger:hover {
+  color: var(--ink-2);
 }
 
 /* Fallback shown only when Supabase isn't configured at all (no VITE_SUPABASE_* env
@@ -1740,10 +1820,10 @@ a:hover {
   .hspacer { display: none; }
   /* Desktop drops the panel below the trigger via position: absolute — it isn't part of
      the flex flow at all there. Static positioning here puts it back in flow as a sibling
-     of .auth-trigger inside .auth's flex row, so without flex-wrap + a forced full-width
-     basis the two sit side by side (crushed) instead of the trigger row then the panel
-     full-width beneath it. */
-  .signin-panel { position: static; width: 100%; flex: 1 1 100%; border-left: 0; border-right: 0; }
+     of .auth-trigger/.auth-user inside .auth's flex row, so without flex-wrap + a forced
+     full-width basis the two sit side by side (crushed) instead of the trigger row then
+     the panel full-width beneath it. Applies to both panels — same box, same reason. */
+  .signin-panel, .account-panel { position: static; width: 100%; flex: 1 1 100%; border-left: 0; border-right: 0; }
   .auth-trigger { border-left: 0; justify-content: center; }
   .auth { display: flex; flex-wrap: wrap; }
   .auth-trigger, .auth-user, .auth-signout { flex: 1; justify-content: center; min-height: var(--touch-48); }
