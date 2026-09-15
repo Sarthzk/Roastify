@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { getClientIP, createRatelimit } from "./_lib/rateLimit.js";
+import { getClientIP, createRatelimit, getRateLimitKey } from "./_lib/rateLimit.js";
 import { withScrapeCache } from "./_lib/scrapeCache.js";
 import { handleCorsPreflight } from "./_lib/cors.js";
 import { ERROR_CODES, RoastError, toErrorEnvelope } from "./_lib/errors.js";
@@ -7,6 +7,8 @@ import { getSystemPrompt } from "./_lib/prompts/index.js";
 import { resolvePersona, isPersonaAllowedForType } from "./_lib/prompts/personas.js";
 import { fenceUntrustedContent } from "./_lib/prompts/fence.js";
 import { isInstagramEnabled } from "./_lib/config.js";
+import { getAuthenticatedUser } from "./_lib/auth.js";
+import { persistRoast } from "./_lib/persistRoast.js";
 import { extractGithubUsername, scrapeGithub } from "./_lib/scrapers/github.js";
 import { extractInstagramUsername, scrapeInstagram } from "./_lib/scrapers/instagram.js";
 import { extractStreamingRoastText, sendSseEvent } from "./_lib/streaming.js";
@@ -163,17 +165,39 @@ export default async function handler(req, res) {
     return res.status(err.status).json(toErrorEnvelope(err));
   }
 
+  // Never trust a client-sent user id — this is the server's own verification of the
+  // Authorization header against Supabase Auth (api/_lib/auth.js). Resolved once and
+  // reused below for the Instagram sign-in gate, rate-limit tier/key, and persistence.
+  const user = await getAuthenticatedUser(req);
+
+  // Instagram is gated behind sign-in specifically because Apify is its only paid
+  // dependency (unlike GitHub's free API, or the linkedin/resume upload paths, which
+  // scrape nothing at all) — distinct from the kill switch above, which is an
+  // operational "Apify itself is broken" state. Same early-exit spot, same reasoning:
+  // don't consume a rate-limit token for a request that was never going to succeed.
+  if (type === "instagram" && !user) {
+    const err = new RoastError(
+      ERROR_CODES.SIGN_IN_REQUIRED,
+      "Sign in to roast Instagram profiles.",
+      { status: 401, retryable: false }
+    );
+    logFailure(err, { type, model: modelOption.model, persona: persona.id });
+    return res.status(err.status).json(toErrorEnvelope(err));
+  }
+
   // Rate limiting check (moved inside handler to prevent cold-start crashes). Skipped
   // entirely in development, same NODE_ENV pattern as resolveProductionSafeModelOption
   // and the debug payload below — production behavior (including the fail-open catch)
   // is untouched outside dev. rateLimitInfo stays null in the bypass case, same as the
   // existing fail-open path when Upstash itself is unreachable.
   const ip = getClientIP(req);
+  const rateLimitTier = user ? "authenticated" : "anonymous";
+  const rateLimitKey = getRateLimitKey(user, ip);
   let rateLimitInfo = null;
   if (process.env.NODE_ENV !== "development") {
     try {
-      const ratelimit = createRatelimit();
-      const { success, limit, remaining, reset } = await ratelimit.limit(ip);
+      const ratelimit = createRatelimit(rateLimitTier);
+      const { success, limit, remaining, reset } = await ratelimit.limit(rateLimitKey);
       rateLimitInfo = { limit, remaining, reset };
       if (!success) {
         // Not logged as a failure — this is expected, routine throttling, not a bug.
@@ -196,6 +220,10 @@ export default async function handler(req, res) {
 
   let profileData;
   let userMessageContent;
+  // The scraped username, when there is one — stored on the persisted roast row (see
+  // persistRoast() below); null for linkedin/resume, which have no natural identifier
+  // and whose raw pasted/PDF-extracted text is deliberately never persisted (no PII).
+  let identifier = null;
   try {
     profileData = url;
 
@@ -205,9 +233,11 @@ export default async function handler(req, res) {
     // extracted client-side from an uploaded PDF via pdfjs — see InputForm.jsx), so
     // profileData just stays the raw url/text as-is, same as it always has for resume.
     if (type === "github") {
-      profileData = await withScrapeCache("github", extractGithubUsername(url), () => scrapeGithub(url));
+      identifier = extractGithubUsername(url);
+      profileData = await withScrapeCache("github", identifier, () => scrapeGithub(url));
     } else if (type === "instagram") {
-      profileData = await withScrapeCache("instagram", extractInstagramUsername(url), () => scrapeInstagram(url));
+      identifier = extractInstagramUsername(url);
+      profileData = await withScrapeCache("instagram", identifier, () => scrapeInstagram(url));
     }
 
     // Build user message content - always use text-only for Instagram (no images)
@@ -312,6 +342,22 @@ export default async function handler(req, res) {
             _debug_scraped_raw: profileData,
           }
         : {};
+
+    // Every roast is persisted, signed-in or not — an anonymous one just gets a null
+    // user_id (stored for analytics, not attributed or listed in anyone's history; see
+    // the migration's comment). A no-op when Supabase isn't configured, and fails open
+    // on any write error — persistence must never take down a roast the caller already
+    // successfully received.
+    await persistRoast({
+      userId: user?.id ?? null,
+      type,
+      identifier,
+      persona: persona.id,
+      severity: selectedSeverity,
+      model: modelOption.label,
+      roast: parsed.roast,
+      tips: parsed.tips,
+    });
 
     sendSseEvent(res, "complete", {
       roast: parsed.roast,

@@ -10,7 +10,19 @@ const { createRatelimitMock } = vi.hoisted(() => ({
 vi.mock("./_lib/rateLimit.js", () => ({
   getClientIP: () => "127.0.0.1",
   createRatelimit: createRatelimitMock,
-  RATE_LIMIT_MAX: 5,
+  getRateLimitKey: (user, ip) => (user ? `user:${user.id}` : `ip:${ip}`),
+  RATE_LIMIT_TIERS: { anonymous: { max: 3, window: "1 d" }, authenticated: { max: 15, window: "1 d" } },
+}));
+
+// Defaults to anonymous (null) — getAuthenticatedUser's own JWT-verification behavior is
+// exercised directly in api/_lib/auth.test.js. Controllable per test (see the "signed-in
+// tier" describe block below) so this file never needs real Supabase config, matching
+// "Mock Supabase — no live calls in tests."
+const { getAuthenticatedUserMock } = vi.hoisted(() => ({
+  getAuthenticatedUserMock: vi.fn(async () => null),
+}));
+vi.mock("./_lib/auth.js", () => ({
+  getAuthenticatedUser: getAuthenticatedUserMock,
 }));
 
 const { default: handler } = await import("./rate-limit-status.js");
@@ -51,7 +63,7 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).not.toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: true });
+    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: true, signedIn: false, tier: "anonymous" });
   });
 
   it("still queries the real rate limit when NODE_ENV is unset", async () => {
@@ -61,7 +73,7 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true });
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true, signedIn: false, tier: "anonymous" });
   });
 
   it("still queries the real rate limit when NODE_ENV is production", async () => {
@@ -71,7 +83,7 @@ describe("rate-limit-status handler — dev bypass", () => {
     await handler(req(), res);
 
     expect(createRatelimitMock).toHaveBeenCalled();
-    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true });
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: true, signedIn: false, tier: "anonymous" });
   });
 });
 
@@ -93,7 +105,7 @@ describe("rate-limit-status handler — Instagram kill switch", () => {
 
     await handler(req(), res);
 
-    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: false });
+    expect(res.body).toEqual({ limit: 5, remaining: 3, reset: 1234567890, instagramEnabled: false, signedIn: false, tier: "anonymous" });
   });
 
   it("reports instagramEnabled: false even in the dev-bypass response", async () => {
@@ -103,6 +115,39 @@ describe("rate-limit-status handler — Instagram kill switch", () => {
 
     await handler(req(), res);
 
-    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: false });
+    expect(res.body).toEqual({ limit: null, remaining: null, reset: null, unlimited: true, instagramEnabled: false, signedIn: false, tier: "anonymous" });
+  });
+});
+
+describe("rate-limit-status handler — signed-in tier", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    getAuthenticatedUserMock.mockReset();
+    getAuthenticatedUserMock.mockImplementation(async () => null);
+    createRatelimitMock.mockClear();
+  });
+
+  it("queries the authenticated-tier bucket, keyed by user id, for a signed-in caller", async () => {
+    delete process.env.NODE_ENV;
+    getAuthenticatedUserMock.mockResolvedValueOnce({ id: "user-1", email: "a@b.com" });
+    const res = createMockRes();
+
+    await handler(req(), res);
+
+    expect(createRatelimitMock).toHaveBeenCalledWith("authenticated");
+    expect(res.body).toMatchObject({ signedIn: true, tier: "authenticated" });
+  });
+
+  it("reports signedIn: false and the anonymous tier for a request with no valid token", async () => {
+    delete process.env.NODE_ENV;
+    const res = createMockRes();
+
+    await handler(req(), res);
+
+    expect(createRatelimitMock).toHaveBeenCalledWith("anonymous");
+    expect(res.body).toMatchObject({ signedIn: false, tier: "anonymous" });
   });
 });

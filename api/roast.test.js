@@ -18,6 +18,19 @@ const { createRatelimitMock } = vi.hoisted(() => ({
 vi.mock("./_lib/rateLimit.js", () => ({
   getClientIP: () => "127.0.0.1",
   createRatelimit: createRatelimitMock,
+  getRateLimitKey: (user, ip) => (user ? `user:${user.id}` : `ip:${ip}`),
+  RATE_LIMIT_TIERS: { anonymous: { max: 3, window: "1 d" }, authenticated: { max: 15, window: "1 d" } },
+}));
+
+// Defaults to anonymous (null) — getAuthenticatedUser's own JWT-verification behavior is
+// exercised directly in api/_lib/auth.test.js. Controllable per test (see the "Instagram
+// sign-in gate" describe block below) so this file never needs real Supabase config,
+// matching "Mock Supabase — no live calls in tests."
+const { getAuthenticatedUserMock } = vi.hoisted(() => ({
+  getAuthenticatedUserMock: vi.fn(async () => null),
+}));
+vi.mock("./_lib/auth.js", () => ({
+  getAuthenticatedUser: getAuthenticatedUserMock,
 }));
 
 // No test in this file exercises a real model response — every handler test either
@@ -466,8 +479,12 @@ describe("handler — Instagram kill switch", () => {
     expect(createRatelimitMock).not.toHaveBeenCalled();
   });
 
-  it("does not reject an instagram request when INSTAGRAM_ENABLED is unset (default enabled)", async () => {
+  it("does not reject a signed-in instagram request when INSTAGRAM_ENABLED is unset (default enabled)", async () => {
     delete process.env.INSTAGRAM_ENABLED;
+    // Signed in — otherwise the separate SIGN_IN_REQUIRED gate (see "Instagram sign-in
+    // gate" below) would reject this first and the kill-switch behavior under test here
+    // would never be reached.
+    getAuthenticatedUserMock.mockResolvedValueOnce({ id: "user-1", email: "a@b.com" });
     createRatelimitMock.mockClear();
     // Invalid username fails synchronously inside extractInstagramUsername — proves the
     // request passed the kill-switch check and reached real scrape validation instead of
@@ -499,5 +516,93 @@ describe("handler — Instagram kill switch", () => {
     await handler(req, res);
 
     expect(res.body.error.code).toBe(ERROR_CODES.SCRAPE_INVALID_INPUT);
+  });
+});
+
+describe("handler — Instagram sign-in gate", () => {
+  function instagramReq() {
+    return {
+      method: "POST",
+      // Invalid username fails synchronously inside extractInstagramUsername — proves a
+      // request that gets past this gate reaches real scrape validation next, same
+      // no-network pattern the other handler tests in this file use.
+      body: { url: "not a valid username!!", type: "instagram" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+  }
+
+  it("rejects an anonymous instagram request with SIGN_IN_REQUIRED (401), before rate limiting", async () => {
+    createRatelimitMock.mockClear();
+    const res = createMockRes();
+
+    await handler(instagramReq(), res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({
+      error: { code: ERROR_CODES.SIGN_IN_REQUIRED, retryable: false },
+    });
+    expect(createRatelimitMock).not.toHaveBeenCalled();
+  });
+
+  it("lets a signed-in instagram request through to real scrape validation", async () => {
+    getAuthenticatedUserMock.mockResolvedValueOnce({ id: "user-1", email: "a@b.com" });
+    createRatelimitMock.mockClear();
+    const res = createMockRes();
+
+    await handler(instagramReq(), res);
+
+    expect(res.body.error.code).not.toBe(ERROR_CODES.SIGN_IN_REQUIRED);
+    expect(res.body.error.code).toBe(ERROR_CODES.SCRAPE_INVALID_INPUT);
+    expect(createRatelimitMock).toHaveBeenCalledWith("authenticated");
+  });
+
+  it("does not gate non-instagram types behind sign-in", async () => {
+    const req = {
+      method: "POST",
+      body: { url: "not a valid username!!", type: "github" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.body.error.code).not.toBe(ERROR_CODES.SIGN_IN_REQUIRED);
+  });
+
+  it("the kill switch (SOURCE_UNAVAILABLE) takes precedence over the sign-in gate", async () => {
+    process.env.INSTAGRAM_ENABLED = "false";
+    try {
+      const res = createMockRes();
+      await handler(instagramReq(), res);
+      expect(res.body.error.code).toBe(ERROR_CODES.SOURCE_UNAVAILABLE);
+    } finally {
+      delete process.env.INSTAGRAM_ENABLED;
+    }
+  });
+});
+
+describe("handler — tier-based rate limit keying", () => {
+  function scrapeFailureReq() {
+    return {
+      method: "POST",
+      body: { url: "not a valid username!!", type: "github" },
+      headers: {},
+      socket: { remoteAddress: "127.0.0.1" },
+    };
+  }
+
+  it("uses the anonymous tier, keyed by IP, for a request with no valid token", async () => {
+    createRatelimitMock.mockClear();
+    await handler(scrapeFailureReq(), createMockRes());
+    expect(createRatelimitMock).toHaveBeenCalledWith("anonymous");
+  });
+
+  it("uses the authenticated tier, keyed by user id, for a signed-in request", async () => {
+    getAuthenticatedUserMock.mockResolvedValueOnce({ id: "user-42", email: "a@b.com" });
+    createRatelimitMock.mockClear();
+    await handler(scrapeFailureReq(), createMockRes());
+    expect(createRatelimitMock).toHaveBeenCalledWith("authenticated");
   });
 });
