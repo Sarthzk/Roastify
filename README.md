@@ -60,6 +60,55 @@ Sign-in is entirely optional infrastructure: with `VITE_SUPABASE_URL` /
 anonymous-only (same as before Supabase was added) — no crash, no degraded experience
 beyond not having an account tier to opt into.
 
+### Chat (backend only)
+
+A signed-in user can continue a conversation in the same persona voice that produced one
+of their roasts — the persona is locked at creation and can't be changed mid-conversation.
+This is backend-only for now (no UI yet — see `CLAUDE.md`'s "Chat" section), so it's
+built to be fully exercised by curl. The model only ever sees the roast text/tips it
+already generated, never the original scraped profile or resume — Roastify doesn't store
+that, so a chat reply can't reference details the roast itself didn't mention.
+
+```sh
+TOKEN="<a real Supabase access_token — see below>"
+ROAST_ID="<a roast id belonging to that same user>"
+
+# 1. Start a conversation from an existing roast.
+CONVERSATION_ID=$(curl -s -X POST http://localhost:3001/api/conversations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"roastId\": \"$ROAST_ID\"}" | jq -r .id)
+echo "$CONVERSATION_ID"
+
+# 2. Send a message — streams the reply over SSE.
+curl -N -X POST http://localhost:3001/api/messages \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"conversationId\": \"$CONVERSATION_ID\", \"content\": \"What was the worst part?\"}"
+
+# 3. Fetch the conversation with its messages so far.
+curl -s http://localhost:3001/api/conversations?id=$CONVERSATION_ID \
+  -H "Authorization: Bearer $TOKEN" | jq .
+
+# 4. Delete it (cascades to its messages).
+curl -s -X DELETE http://localhost:3001/api/conversations?id=$CONVERSATION_ID \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+`$TOKEN` needs to be a real Supabase `access_token` for a signed-in user — the quickest
+way to get one locally is to sign in through the running frontend (`npm run dev`), then
+read `session.access_token` from the browser's devtools console
+(`(await supabase.auth.getSession()).data.session.access_token` — `supabase` is the
+client exported from `src/lib/supabaseClient.js`, reachable if you log it from
+`Layout.jsx` once). `$ROAST_ID` is any `id` from that same user's `roasts` rows (e.g. via
+`GET /api/history` with the same token, or straight from the Supabase table editor).
+
+Every request without a valid token gets `SIGN_IN_REQUIRED` (401); a `roastId`/
+`conversationId` that doesn't exist or belongs to someone else gets `ROAST_NOT_FOUND` /
+`CONVERSATION_NOT_FOUND` (404), deliberately identical either way, same as `/api/history`.
+Chat messages get their own rate-limit bucket — 60/day, separate from and higher than the
+15/day roast limit, since a chat turn is much cheaper (no scrape).
+
 **Setting up your own Supabase project:**
 1. Create a project at https://supabase.com, then apply the schema in
    `supabase/migrations/` — either `supabase db push` (with the [Supabase

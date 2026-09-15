@@ -8,6 +8,79 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-16
 
+### Chat backend: conversations + messages, backend only
+New feature, requested directly: a signed-in user can continue a conversation with the
+same persona voice that roasted them, the roast staying in context for the whole
+conversation. Backend only (a design pass for the frontend is running separately) — built
+so the whole flow is exercisable by curl, since there's no UI yet to drive it through.
+Full design writeup in `CLAUDE.md`'s new "Chat" section; curl walkthrough in README's
+"Chat (backend only)" section; complete summary in `ROASTIFY_TASKS.md` Section 18.
+
+Two new tables (`supabase/migrations/20260916000000_conversations_and_messages.sql`),
+following the exact RLS shape `roasts` already established: `conversations` (`roast_id`
+nullable and `on delete cascade` — deliberate headroom for a future debate-mode feature
+that reuses these tables with no roast attached, nothing for that built now; `user_id`
+not null, unlike `roasts.user_id`, since there's no anonymous chat) and `messages` (no
+`user_id` column of its own — its RLS policies join back to `conversations.user_id`
+instead). Read/delete-own policies on both, no INSERT policy on either — every write goes
+through the service role key.
+
+Two new endpoints: `api/conversations.js` (`POST` start from a `roastId` — rejects one
+that doesn't belong to the caller's verified JWT with the existing `ROAST_NOT_FOUND`;
+`GET ?id=` fetch with messages; `DELETE ?id=`, messages cascade via the FK) and
+`api/messages.js` (`POST`, streams the reply over SSE, reusing `sendSseEvent`/the error
+envelope rather than a second SSE implementation). A new `CONVERSATION_NOT_FOUND` code
+covers ownership failures on the latter three operations — added to `errors.js`'s
+`ERROR_CODE_META` as `reportToSentry: false`, same classification as `ROAST_NOT_FOUND`,
+which is exactly what that mechanism from the previous session exists for: a new code is
+forced to declare its own classification, not inherit a default.
+
+Persona is copied from the roast onto the conversation at creation and read back from
+there on every turn — never from the request body — which is what "locks" it; verified
+directly in `api/messages.test.js` by sending a persona in the body and asserting it's
+ignored. The system prompt gets a dedicated composer (`api/_lib/prompts/chat.js`) rather
+than another branch on `getSystemPrompt()`, since chat has no output contract, profile
+type, or severity dial — just the locked persona voice and the roast already produced. Its
+new `CHAT_BASE_FRAGMENT` explicitly tells the model it does NOT have the scraped
+profile/resume text (only the roast output, which is all Roastify ever stores) — without
+that line the model will happily invent profile details it never saw, which would quietly
+break the privacy page's "we don't store your profile data" claim the moment chat could
+reference something the roast didn't say. The roast text/tips get the same
+`fenceUntrustedContent()` treatment scraped profile data already gets, since it's model
+output derived from attacker-controlled input.
+
+Extracted `api/_lib/modelClient.js` (`getRequiredApiKey`/`getClient`) out of `api/roast.js`
+so both endpoints build the same Groq/OpenAI clients from one place — a pure mechanical
+move (same two functions, same lazy-construction reasoning), confirmed behavior-preserving
+by the full existing suite passing unchanged before writing anything new. Chat always
+resolves to `DEFAULT_MODEL_KEY`; no chat model picker. No `response_format` toggling in its
+completion params either — chat replies are plain text, not the `{ roast, tips }` contract,
+so real token-by-token streaming just works on Groq without needing to fight the buffering
+`api/roast.js` has to work around.
+
+Context sent to the model is capped at the system prompt plus the last
+`CHAT_CONTEXT_MESSAGE_LIMIT` (20, exported for tests) prior messages, plus the new message
+itself — summarizing older history once a conversation outgrows that is explicitly a later
+task, not attempted here. Persistence (`api/_lib/persistChatTurn.js`) mirrors
+`persistRoast.js`'s fail-open reasoning (the client already has the streamed reply by the
+time it runs) but reports every failure via `reportError()`, learning from the exact
+silent-failure history `PERSIST_ROAST_FAILURE` exists to prevent. Rate limiting gets its
+own `chat` tier (60/day, keyed by user id — 4x the 15/day authenticated roast cap, since a
+chat turn has no scrape and is much cheaper), with the same `NODE_ENV=development` bypass
+`api/roast.js` uses.
+
+**Verification**: 32 new tests (`api/conversations.test.js`, `api/messages.test.js`,
+`api/_lib/prompts/chat.test.js`, small additions to `api/_lib/rateLimit.test.js`) covering
+persona locking, ownership enforcement on every endpoint (a conversation/roast belonging
+to another user, an anonymous request), the context-window cap (mocked history longer
+than the limit, asserting only the last N reach the model in the right order), and the
+full SSE happy path (streamed `message` frames, the `complete` frame, persistence called
+with the right content). Supabase and the model are both mocked — no live calls, matching
+the repo's testing norms. All 188 tests (156 existing + 32 new) pass, lint and build
+clean. The migration itself was written but deliberately not applied to any real Supabase
+project — that's a schema change against live infrastructure, the user's call, same as
+every prior migration in this repo.
+
 ### Split Sentry reporting: expected user errors vs. real system problems
 Sentry (wired up in the previous session) turned out to be reporting expected user
 errors as issues — a mistyped GitHub username produced a `RoastError` Sentry issue,

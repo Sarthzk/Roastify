@@ -449,9 +449,11 @@ Every piece here degrades to "everyone is anonymous" when Supabase env vars are 
 ### Rate limiting & caching
 `api/_lib/rateLimit.js` exports `createRedisClient()` (shared by rate limiting and scrape caching),
 `getClientIP`, `createRatelimit(tier)`, `getRateLimitKey(user, ip)`, and `RATE_LIMIT_TIERS`
-(`{ anonymous: { max: 3, window: "1 d" }, authenticated: { max: 15, window: "1 d" } }`). Two tiers,
-not one flat limit, now that a request can be attributed to a signed-in user (see "Auth & persistence"
-above) instead of only an IP — daily windows, not the original hourly one. `createRatelimit(tier)`
+(`{ anonymous: { max: 3, window: "1 d" }, authenticated: { max: 15, window: "1 d" }, chat: { max: 60,
+window: "1 d" } }`). Three tiers, not one flat limit, now that a request can be attributed to a
+signed-in user (see "Auth & persistence" above) instead of only an IP — daily windows, not the
+original hourly one. `chat` is its own tier rather than sharing `authenticated`'s cap — see "Chat"
+below for why a chat turn gets a meaningfully higher limit than a roast. `createRatelimit(tier)`
 builds an Upstash Redis sliding-window limiter for that tier, each with its own `prefix` (so the same
 key string can never collide across tiers); `getRateLimitKey(user, ip)` returns `user:<id>` when signed
 in, `ip:<ip>` otherwise, so a signed-in user's quota follows their account rather than the device/
@@ -479,6 +481,95 @@ network they're on, and anonymous/signed-in use on the same device never shares 
   and 24 hours for `instagram` (Apify runs are billed, and profiles change slowly). `linkedin`/`resume`
   have no entry — they're not scraped at all, so there's nothing to cache. See
   `api/_lib/scrapeCache.test.js`.
+
+### Chat
+Backend only, added 2026-09-16 — a signed-in user can continue a conversation in the same persona
+voice that produced one of their roasts, entirely by curl right now (no UI yet; a design pass for the
+frontend is separate work). Two tables (`supabase/migrations/20260916000000_conversations_and_messages.sql`,
+following the exact RLS shape `roasts` already established — see "Auth & persistence" above):
+`conversations` (`id`, `roast_id` nullable, `user_id` not null, `persona`, `created_at`) and `messages`
+(`id`, `conversation_id`, `role`, `content`, `created_at` — no `user_id` column of its own; its RLS
+policies join back to `conversations.user_id` instead). `roast_id` is nullable deliberately: a future
+debate-mode feature reuses these same two tables with no roast attached — nothing for that is built,
+this just avoids a schema change later. Every conversation created today always sets it, and it's
+`on delete cascade`: deleting the underlying roast (`api/history.js`) deletes conversations anchored to
+it too, since their entire context was that roast. `user_id` is `on delete cascade` same as
+`roasts.user_id` (account deletion removes every conversation with it), but unlike `roasts.user_id`
+it's NOT nullable — there is no anonymous chat, `api/conversations.js` and `api/messages.js` are
+signed-in only end to end. RLS: read/delete-own policies on both tables, no INSERT policy on either —
+every write goes through the service role key, same "server writes via service role" pattern `roasts`
+already uses.
+
+**Persona locking.** `persona` is copied from the roast row onto the conversation at creation time
+(`api/conversations.js`'s `POST` handler) and never changes afterward — every subsequent turn
+(`api/messages.js`) reads it back off the conversation row, never from the request body, so there is
+no client-supplied persona field for that endpoint to even honor. `api/messages.test.js` sends a
+`persona` field in the POST body specifically to prove it's ignored.
+
+**Endpoints**, both signed-in only (anonymous gets `SIGN_IN_REQUIRED`, same code/semantics
+`api/history.js` already uses):
+- `api/conversations.js` — `POST` (start a conversation from a `roastId`; queries the roast via a
+  client scoped to the caller's own JWT, so RLS's "roasts: read own" — not application code — decides
+  whether it belongs to them; a roast that doesn't exist or isn't theirs is `ROAST_NOT_FOUND`,
+  deliberately indistinguishable either way, same pattern as `api/history.js`'s delete), `GET ?id=`
+  (fetch one conversation with all its messages, oldest first), `DELETE ?id=` (remove one; messages
+  cascade via the FK, not a second manual delete). A conversation id that doesn't exist or isn't the
+  caller's is `CONVERSATION_NOT_FOUND` on both `GET` and `DELETE` — a new error code (declared in
+  `api/_lib/errors.js`'s `ERROR_CODE_META` as `reportToSentry: false`, same classification as
+  `ROAST_NOT_FOUND` — a bad/foreign id is the caller's business, not ours).
+- `api/messages.js` — `POST` posts one message into an existing conversation and streams the reply
+  over SSE, reusing `sendSseEvent`/the error envelope from `api/_lib/streaming.js` /
+  `api/_lib/errors.js` rather than a second SSE implementation, and the exact same
+  commit-to-SSE-only-after-the-stream-promise-resolves pattern `api/roast.js` uses (see "Request flow"
+  above) — a failure before that point is a real HTTP status, a failure after is an `event: error`
+  frame. Events: `message` (`{ text }`, cumulative so far — same shape as `api/roast.js`'s `event:
+  roast`) while streaming, `complete` (`{ text, messageId, rateLimit }`) once persisted, `error`
+  otherwise.
+
+**Model call.** No `response_format`/JSON-contract toggling like `buildCompletionParams` in
+`api/roast.js` — chat replies are plain conversational text, not the `{ roast, tips }` shape, so
+there's no `json_object` mode to fight Groq's server-side buffering (see that function's own comment)
+and real token-by-token streaming just works unconditionally; `reasoning_effort: "low"` for Groq stays,
+same latency/cost reasoning. Always resolves to `DEFAULT_MODEL_KEY` (`api/roast.js`) — there's no chat
+model picker, dev or otherwise. `api/_lib/modelClient.js` (`getRequiredApiKey`/`getClient`) was
+extracted out of `api/roast.js` so both endpoints build the same Groq/OpenAI clients from one place
+instead of duplicating the key-selection logic — a pure mechanical move, no behavior change (still
+covered by `api/roast.test.js`'s existing `openai` mock).
+
+**System prompt.** `api/_lib/prompts/chat.js`'s `getChatSystemPrompt(personaId, roast, tips)` is a
+separate composer from `getSystemPrompt()` (`api/_lib/prompts/index.js`), not an extra branch on it —
+chat has no output contract, no profile type, no severity dial, only a locked persona voice and the
+roast already produced. Composes `[CHAT_BASE_FRAGMENT, persona.promptFragment, <fenced roast + tips>,
+UNTRUSTED_DATA_NOTICE]` — the persona fragment and the notice are the exact same fragments
+`getSystemPrompt()` uses, reused rather than duplicated. `CHAT_BASE_FRAGMENT`
+(`api/_lib/prompts/fragments.js`) is new: it explicitly tells the model it does NOT have the scraped
+profile or resume text — Roastify never stores that, only the roast output (`roasts.roast`/`.tips` —
+see "Auth & persistence" above), so the model's only knowledge of the person is what the roast already
+said. Without this the model will happily hallucinate profile details it never saw; this is what keeps
+the privacy page's "we don't store your scraped profile" claim honest even in a multi-turn chat. The
+roast text is model output derived from attacker-controlled scraped/pasted input, so it gets the same
+`fenceUntrustedContent()` treatment scraped profile data gets in `api/roast.js` — never dropped into
+the prompt raw (see "Prompt injection defense" above).
+
+**Context window.** `api/messages.js`'s `CHAT_CONTEXT_MESSAGE_LIMIT` (exported, currently `20`) caps
+how much prior conversation gets sent back to the model on top of the new message itself (which is
+always included — trimming that away would defeat the request). Queried as the last N by
+`created_at desc` + `limit`, then reversed back to chronological order for the completion call.
+Summarizing older history instead of just dropping it past the cap is a later task, not built here.
+
+**Persistence.** `api/_lib/persistChatTurn.js` inserts both halves of a turn (the user's message and
+the model's reply) via the service role key, in one call, after the reply has already streamed to the
+client — same fail-open reasoning as `persistRoast.js` (see "Auth & persistence" above): a write
+failure here must never take away a reply the caller already received. Reports failures via
+`reportError()` (always, since a Supabase insert error isn't a `RoastError` — see "Error tracking"
+below), not silently, learning from the same close call `PERSIST_ROAST_FAILURE` was named for.
+
+**Rate limiting.** Its own `chat` tier (`RATE_LIMIT_TIERS.chat`, see "Rate limiting & caching" above),
+not shared with `authenticated` roasts — a chat turn is plain text completion with no scrape, so it's
+much cheaper and gets a meaningfully higher cap (60/day vs. 15/day). Always keyed by user id (this
+endpoint is signed-in only by the time rate limiting runs, so `getRateLimitKey`'s IP fallback never
+actually triggers), and skips the check entirely in `NODE_ENV=development`, same dev bypass
+`api/roast.js` uses.
 
 ### Routing and page structure
 Redesigned 2026-08-21 (v2) and again 2026-09-13 (v3) from Claude Design handoffs — see

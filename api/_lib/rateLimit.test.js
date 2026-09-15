@@ -6,9 +6,14 @@ describe("RATE_LIMIT_TIERS", () => {
     expect(RATE_LIMIT_TIERS.authenticated.max).toBeGreaterThan(RATE_LIMIT_TIERS.anonymous.max);
   });
 
-  it("uses a daily window for both tiers", () => {
+  it("gives chat a meaningfully higher cap than authenticated roasts — a chat turn is much cheaper", () => {
+    expect(RATE_LIMIT_TIERS.chat.max).toBeGreaterThan(RATE_LIMIT_TIERS.authenticated.max);
+  });
+
+  it("uses a daily window for every tier", () => {
     expect(RATE_LIMIT_TIERS.anonymous.window).toBe("1 d");
     expect(RATE_LIMIT_TIERS.authenticated.window).toBe("1 d");
+    expect(RATE_LIMIT_TIERS.chat.window).toBe("1 d");
   });
 });
 
@@ -35,7 +40,10 @@ describe("createRatelimit tier isolation", () => {
   it("gives each tier its own Redis key prefix", () => {
     const anonymous = createRatelimit("anonymous");
     const authenticated = createRatelimit("authenticated");
+    const chat = createRatelimit("chat");
     expect(anonymous.prefix).not.toBe(authenticated.prefix);
+    expect(chat.prefix).not.toBe(authenticated.prefix);
+    expect(chat.prefix).not.toBe(anonymous.prefix);
   });
 
   it("keys signing in from the same IP into a genuinely different bucket than the anonymous one, not just a different key string on the same bucket", () => {

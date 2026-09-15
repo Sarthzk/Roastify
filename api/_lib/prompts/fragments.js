@@ -35,6 +35,14 @@ export const SEVERITY_FRAGMENTS = {
   "destroy me": "INTENSITY: Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
 };
 
+// The base fragment for chat mode (./chat.js's getChatSystemPrompt), composed instead of
+// BASE_FRAGMENT above — chat has no JSON output contract and no scraped profile in hand,
+// just the roast already generated. Deliberately tells the model what it does NOT have,
+// since without this it will happily hallucinate details about a profile it never saw.
+export const CHAT_BASE_FRAGMENT = `You are continuing a conversation with someone Roastify already roasted, staying in the same voice as that roast. You do not have their GitHub/LinkedIn/Instagram profile or resume — Roastify never stores the scraped profile or resume text, only the roast it generated. Your only knowledge of this person is the roast and tips below; work from those, don't invent specifics you can't see, and if asked about something the roast never covered, say so honestly instead of pretending to know it.
+
+Reply in plain conversational text, not JSON — this is a back-and-forth chat, not a roast-generation call.`;
+
 // All scraped/pasted profile content is attacker-controlled (anyone can put text in
 // their bio, headline, or resume) and gets wrapped in <<<PROFILE_DATA_...>>> markers by
 // fenceUntrustedContent() (./fence.js) before being sent as the user message. This

@@ -5,9 +5,14 @@ import { Redis } from "@upstash/redis";
 // api/_lib/auth.js) instead of only an IP — daily windows, not hourly, per product
 // decision: anonymous stays low enough to discourage abuse of the free Groq/Apify quota,
 // signed-in gets a real bump as the incentive to create an account.
+// "chat" is its own tier, not a share of "authenticated" — a chat turn is a plain text
+// completion (no scrape, no Apify/GitHub round trip), so it's much cheaper than a roast
+// and gets a meaningfully higher cap. Signed-in only (see api/messages.js), so it's
+// always keyed by user id, never IP.
 export const RATE_LIMIT_TIERS = {
   anonymous: { max: 3, window: "1 d" },
   authenticated: { max: 15, window: "1 d" },
+  chat: { max: 60, window: "1 d" },
 };
 
 export function getClientIP(req) {

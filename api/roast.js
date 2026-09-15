@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import { getClientIP, createRatelimit, getRateLimitKey } from "./_lib/rateLimit.js";
 import { withScrapeCache } from "./_lib/scrapeCache.js";
 import { handleCorsPreflight } from "./_lib/cors.js";
@@ -10,6 +9,7 @@ import { isInstagramEnabled } from "./_lib/config.js";
 import { getAuthenticatedUser } from "./_lib/auth.js";
 import { persistRoast } from "./_lib/persistRoast.js";
 import { reportError } from "./_lib/sentry.js";
+import { getRequiredApiKey, getClient } from "./_lib/modelClient.js";
 import { extractGithubUsername, scrapeGithub } from "./_lib/scrapers/github.js";
 import { extractInstagramUsername, scrapeInstagram } from "./_lib/scrapers/instagram.js";
 import { extractStreamingRoastText, sendSseEvent } from "./_lib/streaming.js";
@@ -20,9 +20,6 @@ import { extractStreamingRoastText, sendSseEvent } from "./_lib/streaming.js";
 // imported directly from its real module below instead of re-exported through here too.
 export { getSystemPrompt } from "./_lib/prompts/index.js";
 export { PERSONAS, DEFAULT_PERSONA_ID, resolvePersona, isPersonaAllowedForType } from "./_lib/prompts/personas.js";
-
-const openaiApiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
-const groqApiKey = process.env.GROQ_API_KEY;
 
 // Selectable models. Only "gpt-oss-120b" (Groq, free tier) is ever used in production —
 // see resolveProductionSafeModelOption() below, which is the actual security boundary.
@@ -46,20 +43,6 @@ export function resolveModelOption(modelKey) {
 export function resolveProductionSafeModelOption(modelKey, nodeEnv) {
   const isDev = nodeEnv === "development";
   return resolveModelOption(isDev ? modelKey : DEFAULT_MODEL_KEY);
-}
-
-function getRequiredApiKey(provider) {
-  return provider === "groq" ? groqApiKey : openaiApiKey;
-}
-
-// Constructed lazily (not at module load) so a missing key doesn't crash the whole
-// process at import time — the handler's own key checks below handle it as a normal
-// 500 response instead, and this module stays importable in tests/CI without needing
-// any real (or dummy) API keys set.
-function getClient(modelOption) {
-  return modelOption.provider === "groq"
-    ? new OpenAI({ apiKey: groqApiKey, baseURL: "https://api.groq.com/openai/v1", maxRetries: 2 })
-    : new OpenAI({ apiKey: openaiApiKey, maxRetries: 2 });
 }
 
 // Builds the chat.completions.create() params for the streaming roast call. Groq's

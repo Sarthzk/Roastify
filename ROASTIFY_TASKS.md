@@ -49,6 +49,12 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
   coverage, but nobody has actually run a live model call against a real scraped bio
   containing an injection attempt to confirm the model genuinely ignores it rather than
   just trusting the prompt instruction in the abstract. Still owed.
+- **Chat frontend** (Section 18, 2026-09-16). The backend (`api/conversations.js`,
+  `api/messages.js`) is done, tested, and documented — fully exercisable by curl (see
+  README's "Chat (backend only)" section). No UI yet; wire it up once the parallel design
+  pass for it lands. The migration (`supabase/migrations/20260916000000_conversations_and_messages.sql`)
+  also still needs to actually be applied to any real Supabase project running this app —
+  same manual step the 2026-09-12 roasts/reports migration needed (see Section 14).
 
 ---
 
@@ -1178,5 +1184,69 @@ One-line summary per task, in the order they ran:
 - Tasks 3 (delete controls) and 8 (this documentation sweep) are covered under Tasks 2
   and this section respectively — see `GYM_TASKS.md` itself for the exact task list and
   the end-of-session four-point report.
+
+</details>
+
+<details>
+<summary><strong>18. Chat backend: conversations + messages, backend only</strong> (2026-09-16) — new tables, RLS, two endpoints, a chat-specific system prompt, its own rate-limit tier; no UI (see "Small open item" at top)</summary>
+
+A signed-in user can now continue a conversation in the same persona voice that produced
+one of their roasts, entirely by curl (no frontend built in this task — see README's "Chat
+(backend only)" section for the walkthrough and CLAUDE.md's "Chat" section for the full
+design).
+
+- **Schema**: `supabase/migrations/20260916000000_conversations_and_messages.sql` —
+  `conversations` (`roast_id` nullable, `on delete cascade` — deleting the roast a
+  conversation is anchored to takes the conversation with it; `user_id` not null, unlike
+  `roasts.user_id`, since there's no anonymous chat) and `messages` (no `user_id` column;
+  RLS joins back to `conversations.user_id`). `roast_id` being nullable is deliberate
+  headroom for a future debate-mode feature that reuses these tables with no roast
+  attached — nothing for that was built. Same RLS shape `roasts` already established:
+  read/delete-own policies, no INSERT policy (service role only).
+- **Persona locking**: copied from the roast onto the conversation at creation, read back
+  from the conversation row on every message turn — never from the request body, so
+  there's nothing for a client-supplied persona to attach to. Tested directly
+  (`api/messages.test.js` sends one and asserts it's ignored).
+- **Endpoints**: `api/conversations.js` (`POST` start / `GET ?id=` fetch-with-messages /
+  `DELETE ?id=`) and `api/messages.js` (`POST`, streams the reply over SSE). Ownership
+  enforced via a client scoped to the caller's own JWT, same as `api/history.js` — a
+  wrong/foreign id and a genuinely missing one are indistinguishable 404s
+  (`ROAST_NOT_FOUND` at conversation-start, a new `CONVERSATION_NOT_FOUND` everywhere
+  else). All four operations signed-in only.
+- **System prompt**: a new composer (`api/_lib/prompts/chat.js`), not an extra branch on
+  `getSystemPrompt()` — reuses the persona fragment and `UNTRUSTED_DATA_NOTICE`, adds a
+  new `CHAT_BASE_FRAGMENT` that explicitly tells the model it does NOT have the scraped
+  profile/resume (Roastify never stored that, only the roast output), so it can't
+  hallucinate profile details the roast never mentioned — keeps the privacy page's claim
+  honest in a multi-turn chat too. The roast text/tips get the same `fenceUntrustedContent()`
+  treatment scraped profile data already gets, since the roast is model output derived
+  from attacker-controlled input.
+- **Context window**: `CHAT_CONTEXT_MESSAGE_LIMIT` (20, exported from `api/messages.js`)
+  caps prior history sent to the model on top of the new message. Summarizing older
+  history instead of just dropping it past the cap is explicitly deferred, not built.
+- **Model call**: no JSON-contract/`response_format` toggling — chat is plain
+  conversational text, so real streaming works unconditionally on Groq (unlike
+  `api/roast.js`'s `{ roast, tips }` contract, which has to drop `response_format` for the
+  same reason). `api/_lib/modelClient.js` extracted the Groq/OpenAI client-building logic
+  out of `api/roast.js` so both endpoints share it instead of duplicating — pure
+  mechanical move, `api/roast.test.js`'s existing `openai` mock still covers it unchanged.
+- **Persistence**: `api/_lib/persistChatTurn.js`, fail-open like `persistRoast.js` and for
+  the same reason (the client already has the streamed reply by the time this runs) — but
+  reports every failure via `reportError()` rather than risking the same silent-failure
+  history `PERSIST_ROAST_FAILURE` was created to fix.
+- **Rate limiting**: its own `chat` tier (60/day, keyed by user id) — separate from and
+  higher than the 15/day authenticated roast tier, since a chat turn has no scrape and is
+  much cheaper. Same dev bypass as `api/roast.js`.
+- **Error reporting**: the new `CONVERSATION_NOT_FOUND` code was added to
+  `ERROR_CODE_META` (`api/_lib/errors.js`) as `reportToSentry: false` — a bad/foreign
+  conversation id is the caller's business, not a system failure, same classification as
+  `ROAST_NOT_FOUND`. No other new codes needed.
+- **Tests**: 32 new (`api/conversations.test.js`, `api/messages.test.js`,
+  `api/_lib/prompts/chat.test.js`, plus small additions to `api/_lib/rateLimit.test.js`) —
+  persona locking, ownership enforcement on every endpoint, the context-window cap
+  (mocked history longer than the limit, asserting only the last N reach the model, oldest
+  of those first), anonymous rejection, and a roast/conversation belonging to another user
+  being refused. All mocked (Supabase, OpenAI) — no live calls. 188 tests total, lint and
+  build clean.
 
 </details>

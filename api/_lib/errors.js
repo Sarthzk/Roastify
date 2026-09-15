@@ -22,6 +22,7 @@ const ERROR_CODE_META = {
   SOURCE_UNAVAILABLE: { reportToSentry: false },
   SIGN_IN_REQUIRED: { reportToSentry: false },
   ROAST_NOT_FOUND: { reportToSentry: false },
+  CONVERSATION_NOT_FOUND: { reportToSentry: false },
   LLM_UPSTREAM_FAILURE: { reportToSentry: true },
   LLM_EMPTY_RESPONSE: { reportToSentry: true },
   LLM_PARSE_FAILURE: { reportToSentry: true },
