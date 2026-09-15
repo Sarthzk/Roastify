@@ -8,6 +8,55 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Test coverage gaps (GYM_TASKS.md Task 7)
+Frontend had zero tests; vitest's `include` only covered `api/**/*.test.js` (see
+`vite.config.js`). Widened it to `src/**/*.test.js` too — `environment` stays `'node'`
+(no jsdom): every test here covers pure exported logic, never a rendered component, so
+there's nothing that needs a DOM.
+
+**The task named `describeError` in `App.jsx`** — that logic actually lives in
+`Roaster.jsx` now (the v3 routing refactor split `App.jsx` into the route table plus
+per-route components), the discrepancy the task itself flagged as worth noting. Found and
+tested it there.
+
+**Extracting for testability surfaced a real lint violation, not just busywork**:
+exporting plain functions alongside a component from the same file
+(`react-refresh/only-export-components`) breaks Vite Fast Refresh for that file. Rather
+than suppress the rule, moved the pure logic out to real modules — matching this repo's
+own existing convention of separating pure logic from handlers (`api/roast.js` →
+`api/_lib/`):
+- `src/lib/roasterErrors.js` — `describeError`/`formatCountdown`, out of `Roaster.jsx`.
+- `src/lib/inputFormHelpers.js` — `sourceState` (the tier/locked-state derivation the task
+  asked for — instagram's kill-switch-outranks-sign-in-lock logic) and the upload
+  classification/failure-message functions, out of `InputForm.jsx`.
+
+Both component files now export only their component, and both gained real test
+coverage (`src/lib/roasterErrors.test.js`, `src/lib/inputFormHelpers.test.js`) — 19 tests:
+`describeError`'s three real branches (rate-limit countdown from the error's own
+snapshot, scrape-family naming the checked type never the raw input, generic fallback)
+plus the no-code case; `sourceState`'s four tier combinations including the kill-switch-
+outranks-sign-in-lock case; and upload handling — type classification (PDF by extension
+or MIME, text by extension or any `text/*`, unsupported), and the three failure messages
+(unsupported type, empty extraction, extraction threw). The extraction refactor changed
+zero behavior — `processFile()` still checks support *before* attempting extraction, not
+after (a first draft of this got that order wrong and would have wastefully run
+`file.text()` against an already-known-unsupported file; caught and fixed before commit).
+
+**Backend gaps**, both extending existing suites rather than new files:
+- `api/history.test.js`: a full 25-row page now asserts a real `nextCursor` (the last
+  row's own `created_at`, not just "not null"), and two new tests assert `.lt()` is never
+  called on the first page and is called with exactly the given `?cursor=` on a later one
+  — pagination was previously only tested for the "fewer than a page" empty-cursor case.
+- `api/_lib/rateLimit.test.js`: `getRateLimitKey` already had a "keys differ" test:
+  extended with `createRatelimit`'s own `.getKey()` (the real Ratelimit instance's method
+  for building the exact Redis key a request would consume against) to prove the
+  anonymous-IP and signed-in-user buckets are genuinely separate keyspaces — not just
+  different key *strings* that could theoretically still land in the same bucket — down
+  to a deliberately contrived case where a user id string collides with an IP string.
+
+Lint, tests (156, up from 131), and build clean. Manually reloaded the app after the
+refactor and watched the console — no errors, resume-upload UI still renders correctly.
+
 ### Accessibility pass (GYM_TASKS.md Task 6)
 First real accessibility audit of this app. Per the task's own instruction, reused Task
 0's contrast table rather than re-deriving it, and added the pairings Task 0 didn't cover.

@@ -43,7 +43,7 @@ npm install       # install deps
 npm run dev       # Vite dev server (frontend only)
 npm run build     # production build (vite build)
 npm run lint      # eslint . — see "Linting" note below, does NOT cover api/
-npm test          # vitest run — api/**/*.test.js (colocated with the modules they test)
+npm test          # vitest run — api/**/*.test.js and src/**/*.test.js (colocated with the modules they test)
 npm run preview   # preview a production build
 ```
 

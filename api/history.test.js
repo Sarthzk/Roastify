@@ -2,10 +2,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 // vi.hoisted is required here (rather than a plain module-scope const) because vi.mock's
 // factory is hoisted above regular imports/declarations.
-const { getAuthenticatedUserMock, getSupabaseClientForUserMock, queryMock } = vi.hoisted(() => ({
+const { getAuthenticatedUserMock, getSupabaseClientForUserMock, queryMock, ltMock } = vi.hoisted(() => ({
   getAuthenticatedUserMock: vi.fn(async () => null),
   getSupabaseClientForUserMock: vi.fn(),
   queryMock: vi.fn(),
+  ltMock: vi.fn(),
 }));
 
 vi.mock("./_lib/auth.js", () => ({
@@ -29,7 +30,10 @@ function makeFakeClient() {
     select: () => builder,
     order: () => builder,
     limit: () => builder,
-    lt: () => builder,
+    lt: (...args) => {
+      ltMock(...args);
+      return builder;
+    },
     delete: () => builder,
     eq: () => builder,
     then: (resolve) => resolve(queryMock()),
@@ -71,6 +75,7 @@ describe("GET /api/history", () => {
     getAuthenticatedUserMock.mockResolvedValue(null);
     getSupabaseClientForUserMock.mockReset();
     queryMock.mockReset();
+    ltMock.mockReset();
   });
 
   it("rejects a request with no Authorization header with SIGN_IN_REQUIRED (401)", async () => {
@@ -120,6 +125,44 @@ describe("GET /api/history", () => {
     await handler(req({ authorization: "Bearer real-user-token" }), res);
 
     expect(res.body.nextCursor).toBeNull();
+  });
+
+  it("returns a real nextCursor (the last row's created_at) when a full page comes back", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    // PAGE_SIZE is 25 — a full page must actually be full for nextCursor to be non-null.
+    const fullPage = Array.from({ length: 25 }, (_, i) => ({
+      id: `r${i}`,
+      created_at: `2026-09-${String(25 - i).padStart(2, "0")}T00:00:00Z`,
+    }));
+    queryMock.mockReturnValue({ data: fullPage, error: null });
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token" }), res);
+
+    expect(res.body.roasts).toHaveLength(25);
+    expect(res.body.nextCursor).toBe(fullPage[24].created_at);
+  });
+
+  it("passes no cursor filter on the first page (no ?cursor= given)", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ data: [], error: null });
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token" }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(ltMock).not.toHaveBeenCalled();
+  });
+
+  it("filters strictly older than the given ?cursor= for the next page", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ data: [], error: null });
+    const res = createMockRes();
+    const cursor = "2026-09-12T00:00:00Z";
+
+    await handler(req({ authorization: "Bearer real-user-token", url: `/api/history?cursor=${encodeURIComponent(cursor)}` }), res);
+
+    expect(ltMock).toHaveBeenCalledWith("created_at", cursor);
   });
 
   it("returns a real 500 envelope (not a crash) when the query itself errors", async () => {

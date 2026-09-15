@@ -2,6 +2,13 @@ import { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PERSONAS } from "../lib/personas";
+import {
+  sourceState,
+  classifyUploadFile,
+  unsupportedFileMessage,
+  emptyExtractionMessage,
+  extractionFailedMessage,
+} from "../lib/inputFormHelpers";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -39,16 +46,6 @@ const MODELS = [
   { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
   { value: "gpt-4o", label: "GPT-4o" },
 ];
-
-// Instagram is the only source that can ever be anything but "open" — the kill switch
-// (instagramEnabled) outranks the sign-in lock, matching the design: if the scraper is
-// down, a signed-in user sees "off" too, not "sign in".
-function sourceState(source, { instagramEnabled, signedIn }) {
-  if (source.value !== "instagram") return "open";
-  if (!instagramEnabled) return "disabled";
-  if (!signedIn) return "locked";
-  return "open";
-}
 
 export default function InputForm({
   url,
@@ -138,11 +135,10 @@ export default function InputForm({
     setUploadError("");
 
     const fileName = file.name;
-    const isPdf = fileName.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
-    const isText = fileName.toLowerCase().endsWith(".txt") || file.type.startsWith("text/");
+    const { isPdf, isSupported } = classifyUploadFile(fileName, file.type);
 
-    if (!isPdf && !isText) {
-      setUploadError(`"${fileName}" isn't a PDF or text file — try a different file, or paste the text instead.`);
+    if (!isSupported) {
+      setUploadError(unsupportedFileMessage(fileName));
       return;
     }
 
@@ -151,7 +147,7 @@ export default function InputForm({
       const trimmedText = extractedText.trim();
 
       if (!trimmedText) {
-        setUploadError(`Couldn't find any text in "${fileName}" — try pasting the text instead.`);
+        setUploadError(emptyExtractionMessage(fileName));
         return;
       }
 
@@ -159,7 +155,7 @@ export default function InputForm({
       setFileInfo({ name: fileName });
       setUploadStatus(`extracted text from ${fileName}`);
     } catch {
-      setUploadError(`Couldn't read "${fileName}" — try a different file, or paste the text instead.`);
+      setUploadError(extractionFailedMessage(fileName));
     }
   }
 
