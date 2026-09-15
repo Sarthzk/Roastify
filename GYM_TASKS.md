@@ -254,3 +254,136 @@ Tell me, in this order:
 3. The contrast ratio numbers from task 6
 4. Whether mobile was verified on a genuinely narrow viewport, or only
    inferred from the CSS
+
+---
+
+## Report
+
+### 1. What I completed and what I skipped
+
+Completed, in order, each committed and pushed to `dev` separately (commits
+`86e2e09` → `2591a6a`), lint/tests/build clean before every one:
+
+- **Task 0 (contrast lift)** — done. Lifted all six `--ink*` tokens, kept
+  `--accent`/structural rules untouched. Full before/after table in point 3 below.
+- **Task 1 (mobile audit)** — done, highest priority as asked. Found and fixed four real
+  bugs: touch targets silently shrunk below 44px by the `#root` zoom rule (site-wide, not
+  just mobile), five sub-11px text tokens, `/history` rows not stacking per-field at
+  ≤600px, and the sign-in dropdown rendering side-by-side with its own trigger at ≤600px.
+  See point 4 for how this was actually verified.
+- **Task 2 (privacy page + delete controls) and Task 3** — done together, as the file
+  anticipated. Found the delete claims genuinely didn't exist yet, built them first
+  (`DELETE /api/history?id=` per-roast, `DELETE /api/account` for the account, both
+  JWT-verified server-side, never a client-sent id) — this turned out smaller than it
+  looked, because the RLS "delete own" policy and the `on delete cascade` foreign key
+  were already sitting in the schema from the auth work, unused. The `/privacy` page
+  ships with your copy verbatim; nothing in it needed correcting.
+- **Task 4 (Sentry)** — done. Off entirely until you set `SENTRY_DSN` (still unset, no
+  project created) — verified locally that nothing crashes or warns with it absent.
+  Wired alongside every existing `console.error`, never replacing one.
+  `persistRoast`'s silent-fail-open path now reports with its own `PERSIST_ROAST_FAILURE`
+  code, as asked.
+- **Task 5 (og:image)** — done. `sharp` was available; generated a real 1200×630 PNG via
+  a committed, regenerable script (`node scripts/generate-og-image.mjs`).
+  `og:image`/`twitter:image` restored, `twitter:card` back to `summary_large_image`.
+- **Task 6 (accessibility)** — done, verifying task 0's result rather than re-deriving
+  it as instructed. Found and fixed two real bugs beyond the contrast numbers: the fixes
+  checklist's checkbox had `opacity: 0` hiding its own focus outline (a keyboard user got
+  *no* focus indicator there at all), and the sign-in dropdown had neither a focus trap
+  nor focus restoration on close. Full ratio table in point 3.
+- **Task 7 (test coverage)** — done. Vitest only ran `api/**/*.test.js`; widened to cover
+  `src/**/*.test.js` too. The task named `describeError` in `App.jsx` — that logic
+  actually lives in `Roaster.jsx` now (the routing split), tested it there. Extracting it
+  (and `InputForm.jsx`'s `sourceState`/upload logic) for testability surfaced a real lint
+  rule violation (Vite Fast Refresh breaks when a component file also exports plain
+  functions) — fixed properly by moving the logic to `src/lib/`, not by suppressing the
+  rule. 25 new tests, 156 total (up from 131).
+- **Task 8 (docs)** — done. `ROASTIFY_TASKS.md` restructured (open items at the top,
+  18 historical sections collapsed below); found and fixed a real staleness problem in
+  `CLAUDE.md` unrelated to today's work — nine `App.jsx` references that were wrong since
+  the v3 routing split, apparently missed in every session since; closed the README/
+  `.env.example` gaps (two used vars missing from the table, two undocumented fallback
+  names, one broken cross-reference).
+
+**Nothing was skipped.** All eight numbered tasks got done; nothing turned out to need
+stopping and moving on. The **Blocked section was left untouched**, as instructed —
+Turnstile, the Apify spend cap, the Google consent screen, share pages, and merging to
+`main` all still need you directly.
+
+### 2. Decisions needed from you
+
+- **The zoom-compounding question (found 2026-08-23, still open)**: `#root`'s `zoom`
+  actually renders the page at ~91.3% scale, not the 97% originally intended — this was
+  found and reported before today, not new, but it came back up during today's mobile
+  audit and Sentry-adjacent CSS work, so flagging it again since it's still unresolved.
+  Today's touch-target fix (`--touch-44`/`--touch-48`) compensates *for* the current
+  91.3% value rather than resolving whether that's the value you actually want — see
+  `ROASTIFY_TASKS.md`'s "Open" section for the full breakpoint-correction table. Needs a
+  decision before either the zoom value or the four breakpoint numbers are worth
+  touching again.
+- **`pdfjs-dist`'s known advisory** (arbitrary JS execution on a malicious PDF, requires
+  `enableScripting` + no CSP — neither matches how this app calls the library) is still
+  unfixed pending your explicit approval for the breaking major-version bump, same as
+  before. Noticed again in passing while touching `sharp`/dependencies today; not
+  otherwise acted on.
+- Everything else that needs you (bot protection, spend caps, uptime monitoring, the
+  live prompt-injection check, the two open feature ideas) is listed under "Open" at the
+  top of `ROASTIFY_TASKS.md` now, so it doesn't get lost in the historical record again.
+
+### 3. Contrast ratio numbers (task 0's lift, task 6's audit)
+
+Task 0 — the lift itself, against `--ground` (#000000):
+
+| token | before | before ratio | after | after ratio |
+|---|---|---|---|---|
+| `--ink` | `#d1d0c5` | 13.54:1 | `#d4d3c9` | 14.00:1 |
+| `--ink-row-2` | `#9a9992` | 7.35:1 | `#abaaa4` | 9.00:1 |
+| `--ink-row-3` | `#7c7e81` | 5.16:1 | `#8d8f92` | 6.50:1 |
+| `--ink-2` | `#646669` | 3.65:1 | `#808386` | 5.50:1 |
+| `--ink-3` | `#4a4c4f` | 2.44:1 | `#696c71` | 4.00:1 |
+| `--ink-4` | `#3d3f42` | 1.99:1 | *(removed — see below)* | — |
+
+Task 6 — the rest of the audit, everything Task 0 didn't already cover:
+
+| pairing | ratio |
+|---|---|
+| `--accent` on `--ground` (active nav, links, accent labels) | 11.02:1 |
+| `#000` on `--accent` (every filled amber button) | 11.02:1 |
+| `--accent-lt` on `--ground` (plain-link hover — was a hardcoded hex, now a token) | 13.01:1 |
+| `--accent-dk` on `--ground` (selected sublabels, upgrade link) | 4.60:1 |
+| `--ink-3` on `--ground-4` (struck-through fix text — see below) | 3.80:1 |
+
+`--ground` through `--ground-5` are all within a few thousandths of each other in
+luminance, so the `--ground` baseline above stands for all of them.
+
+**One real finding, not a contrast number**: `--ink-4` was declared in `:root` but never
+actually applied anywhere in the CSS — dead since before this session, unrelated to the
+lift. The real struck-through-fix-text rule uses `--ink-3` on `--ground-4` (3.80:1,
+above). Removed the dead token per your own code standards rather than leave it
+unreferenced.
+
+**`--ink-3` sits at ~4:1 for small text** (placeholders, faint labels, and now the
+struck-through fix text) — below WCAG AA's 4.5:1 normal-text threshold. This was a
+deliberate tradeoff in task 0 (traded against keeping the muted identity), reported
+here rather than changed again, per your own instruction to see the numbers before
+anything changes.
+
+### 4. Mobile verification
+
+**Genuinely verified on a real narrow viewport, not inferred from the CSS.**
+`resize_window` still doesn't actually shrink the rendering viewport in this
+environment (confirmed broken again, same as before) — worked around it with a
+same-origin `<iframe>` given explicit `width`/`height` attributes, confirmed via
+`contentWindow.innerWidth` actually reporting the requested width (376px for a 380px
+request, etc.), not just the CSS believing it. Tested at 380/600/900px on `/`, `/history`,
+`/r/:slug`, and `/privacy`, across every output state on the roaster and the upload UI —
+scripted checks (`scrollWidth` vs `clientWidth` for overflow, `getBoundingClientRect()`
+against the real 44px touch-target floor) plus visual screenshots, not just eyeballing.
+
+The one thing I could **not** verify live: the actual authenticated delete flows
+(per-roast and account) from task 2. Your `.env` here points at the real Supabase
+project — there's no staging account — so exercising either delete for real would
+either do nothing (no real session) or risk touching real data, neither of which is a
+genuine test. Verified those two paths through the fully-mocked backend test suite
+(which exercises the real handler code) and by hand-reading the frontend confirm-flow
+logic instead of clicking it live.
