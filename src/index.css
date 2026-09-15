@@ -40,6 +40,14 @@
      not merely inside it). Kept as one shared value so the zoom itself and anything that
      needs to compensate for it can never drift apart. */
   --root-zoom: 0.9127;
+
+  /* Same zoom-shrink problem as above, but for touch targets: a button declared
+     min-height: 44px/48px inside the zoomed #root actually measures ~40px/44px to a real
+     finger (confirmed via getBoundingClientRect() on an iframe at a true 380px viewport —
+     not just read off the CSS). Anything sized as a touch target uses these instead of a
+     literal px value so the real rendered size hits the real minimum. */
+  --touch-44: calc(44px / var(--root-zoom));
+  --touch-48: calc(48px / var(--root-zoom));
 }
 
 html,
@@ -257,7 +265,7 @@ a:hover {
   color: #000;
 }
 .auth-caret {
-  font-size: 10px;
+  font-size: 11px;
   transition: transform 0.18s;
 }
 .auth-caret.is-open {
@@ -402,7 +410,7 @@ a:hover {
 .hmeta {
   display: flex;
   align-items: center;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.22em;
   color: var(--ink-2);
@@ -551,7 +559,7 @@ a:hover {
   letter-spacing: 0.2em;
 }
 .source-card-tag {
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -794,7 +802,7 @@ a:hover {
   gap: 14px;
 }
 .paste-divider-label {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: var(--ink-3);
@@ -818,7 +826,7 @@ a:hover {
   outline: none;
 }
 .upload-error {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   color: var(--accent);
@@ -1056,7 +1064,7 @@ a:hover {
   align-items: center;
   gap: 14px;
   padding: 15px 24px;
-  min-height: 48px;
+  min-height: var(--touch-48);
   background: transparent;
   border: 1px solid var(--rule);
   color: var(--ink-2);
@@ -1326,7 +1334,7 @@ a:hover {
   display: flex;
   align-items: center;
   padding: 15px 24px;
-  min-height: 48px;
+  min-height: var(--touch-48);
   border: 0;
   color: #000;
   background: var(--accent);
@@ -1387,7 +1395,7 @@ a:hover {
   align-items: center;
   gap: 14px;
   padding: 15px 24px;
-  min-height: 48px;
+  min-height: var(--touch-48);
   width: fit-content;
   background: var(--accent);
   border: 0;
@@ -1557,12 +1565,17 @@ a:hover {
   .header { display: block; }
   .brand { border-right: 0; border-bottom: 1px solid var(--rule-2); padding: 15px 20px; }
   .nav { display: flex; border-bottom: 1px solid var(--rule-2); }
-  .nav-item { flex: 1; justify-content: center; min-height: 48px; border-left: 0; border-right: 1px solid var(--rule-2); }
+  .nav-item { flex: 1; justify-content: center; min-height: var(--touch-48); border-left: 0; border-right: 1px solid var(--rule-2); }
   .hspacer { display: none; }
-  .signin-panel { position: static; width: auto; border-left: 0; border-right: 0; }
+  /* Desktop drops the panel below the trigger via position: absolute — it isn't part of
+     the flex flow at all there. Static positioning here puts it back in flow as a sibling
+     of .auth-trigger inside .auth's flex row, so without flex-wrap + a forced full-width
+     basis the two sit side by side (crushed) instead of the trigger row then the panel
+     full-width beneath it. */
+  .signin-panel { position: static; width: 100%; flex: 1 1 100%; border-left: 0; border-right: 0; }
   .auth-trigger { border-left: 0; justify-content: center; }
-  .auth { display: flex; }
-  .auth-trigger, .auth-user, .auth-signout { flex: 1; justify-content: center; min-height: 48px; }
+  .auth { display: flex; flex-wrap: wrap; }
+  .auth-trigger, .auth-user, .auth-signout { flex: 1; justify-content: center; min-height: var(--touch-48); }
   .auth-signout { flex: 0 0 auto; padding: 0 20px; }
   .hmeta { width: 100%; }
   .hmeta-item { flex: 1; padding: 14px 20px; border-left: 0; }
@@ -1584,15 +1597,15 @@ a:hover {
   .drop { flex-direction: column; align-items: flex-start; gap: 10px; padding: 20px 18px; }
   .drop-browse { display: none; }
   .file-row { flex-wrap: wrap; padding: 16px 18px; }
-  .file-replace { margin-left: 0; border-left: 0; padding: 10px 0; min-height: 44px; }
+  .file-replace { margin-left: 0; border-left: 0; padding: 10px 0; min-height: var(--touch-44); }
   .paste-area { font-size: 16px; min-height: 96px; }
 
   .severity-row { flex-wrap: wrap; }
-  .severity-cell { flex: 1; min-height: 48px; }
+  .severity-cell { flex: 1; min-height: var(--touch-48); }
 
   .source-prompt { padding: 20px; }
   .source-prompt-actions { width: 100%; }
-  .source-prompt-provider { flex: 1; min-height: 48px; justify-content: center; }
+  .source-prompt-provider { flex: 1; min-height: var(--touch-48); justify-content: center; }
 
   .submit { padding: 22px 20px; font-size: 13px; letter-spacing: 0.14em; }
   .rate { display: block; padding: 14px 20px; }
@@ -1605,7 +1618,7 @@ a:hover {
 
   .error-body { padding: 26px 20px 28px; }
   .error-msg { font-size: 17px; line-height: 26px; }
-  .retry { min-height: 48px; padding: 14px 20px; }
+  .retry { min-height: var(--touch-48); padding: 14px 20px; }
 
   .fix-row { padding: 16px 20px; gap: 14px; }
 
@@ -1615,6 +1628,12 @@ a:hover {
 
   .hist-row { display: block; padding: 16px 20px; }
   .hist-row > * { padding: 3px 0; }
+  /* .hist-row-persona/-severity/-date are <span>s (inline by default) — the padding above
+     has no vertical effect on an inline element, so without this all three ran together
+     on one line instead of stacking, one field per line, the way .hist-row-source's own
+     flex column already does. Targeted rather than `.hist-row > *` so it doesn't also
+     flip .hist-row-source from flex to block and break its own kind/handle stacking. */
+  .hist-row-persona, .hist-row-severity, .hist-row-date { display: block; }
   .hist-row-severity { border: 0; }
 
   .share-body, .out-body.share-body { padding: 26px 20px 30px; }

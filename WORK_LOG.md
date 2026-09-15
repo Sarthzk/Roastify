@@ -8,6 +8,67 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Mobile compatibility audit (GYM_TASKS.md Task 1)
+Genuine narrow-viewport testing, not a CSS read-through: `resize_window` in this
+environment doesn't actually shrink the rendering viewport (confirmed broken again this
+session), so tested via a same-origin `<iframe>` with explicit `width`/`height` attributes
+injected into a blank tab — `contentWindow.innerWidth` matched the requested width, and
+DOM queries/`getBoundingClientRect()` ran inside that real nested viewport. Covered 380px,
+600px, and 900px on `/`, `/history`, and `/r/:slug`, across idle/streaming/error/complete
+output states, the GitHub/resume source variants, the Instagram locked-source prompt, the
+signed-out locked history panel, and the sign-in dropdown — both open states (signed-out
+panel, signed-in avatar/handle/sign-out) were checked, the signed-in one via a direct DOM
+injection of the header markup since no real Supabase session exists locally (removed
+after, not part of the app's real state). At every width/state, checked for horizontal
+overflow (`scrollWidth` vs `clientWidth`) and any interactive element or text node under
+the 44px touch target / 11px font floor via script, not eyeballing.
+
+**Found and fixed, all at the token/rule level:**
+- **Touch targets silently shrunk by the root zoom.** `#root`'s `zoom: 0.9127` (added for
+  the earlier sticky-footer fix) scales its whole rendered subtree, including any element
+  sized in plain px — a button declared `min-height: 44px`/`48px` measured ~40px/~44px to
+  a real hit-test in the iframe, below the accessibility floor the mobile CSS was clearly
+  trying to hit. This is exactly the zoom/viewport interaction the task asked to verify
+  rather than assume, and it turned out to be real, and site-wide (not mobile-only — the
+  base `.retry`/`.history-empty-provider`/`.history-next-cta` rules hit it too). Fixed with
+  two new root tokens, `--touch-44`/`--touch-48` (`calc(44px / var(--root-zoom))` etc., same
+  compensation pattern as the existing `--root-zoom` comment for `.app-root`'s min-height),
+  swapped in everywhere a touch target was declared at exactly 44 or 48px. Re-measured
+  post-fix: real rendered height is 44px/48px again.
+- **Five sub-11px text tokens**, global, not mobile-specific: `.source-card-tag` and
+  `.auth-caret` (10px), `.hmeta` (the no-Supabase-configured fallback), `.paste-divider-label`
+  ("or paste the text"), and `.upload-error` (the real upload failure/status message shown
+  to the user) — all raised to 11px.
+- **History rows collapsed onto one line at ≤600px instead of stacking.**
+  `.hist-row-persona`/`-severity`/`-date` are `<span>`s (inline by default); the 600px rule
+  only added padding to `.hist-row > *`, which has no vertical effect on an inline element,
+  so all three ran together on one line while `.hist-row-source` (already `display: flex`)
+  correctly split into two. This is the exact "five fields per row will not fit at 380px"
+  case the task named. Fixed by giving the three spans `display: block` directly — not
+  `.hist-row > *` again, which would have flipped `.hist-row-source` from flex to block at
+  equal specificity and broken its own kind/handle stacking.
+- **The sign-in dropdown rendered side-by-side with its trigger at ≤600px**, both crushed
+  into a shared row, instead of the panel dropping full-width below the button. Desktop
+  keeps the panel out of the flex flow entirely (`position: absolute`); the mobile override
+  makes it `position: static` so it re-enters `.auth`'s flex row as a plain sibling, and
+  nothing forced it onto its own line. Fixed with `flex-wrap: wrap` on `.auth` plus
+  `flex: 1 1 100%` on `.signin-panel` at that breakpoint, so the panel force-wraps below the
+  trigger; verified the signed-in state (avatar/handle + sign-out, no panel) still lays out
+  side by side as before, and that the desktop (`position: absolute`) case is untouched.
+
+**Checked and already correct, no change:** header stacking (brand → nav → auth) at
+≤600px, the four-source and three-persona grids collapsing to 2-up at ≤900px (persona's
+third cell spans both columns), the upload/drop-zone UI in both click and would-be-drag
+modes, the severity row's flex-wrap, `/r/:slug`'s placeholder shell, footer stacking, and
+the `hist-row` 2-column grid at 900px (source+persona / severity+date, sensible, no overflow).
+
+**Not verified — needs a decision, or genuinely out of reach here:** keyboard-only
+navigation and focus states are task 6's territory, not re-tested here. Real per-finger
+touch behavior (as opposed to a real CSS pixel viewport with programmatic hit-testing) —
+this environment has no device farm or physical touchscreen, so "real fingers, not
+cursors" was approximated via `getBoundingClientRect()` against the WCAG/common 44px
+target size, not an actual finger. Lint, tests (120), and build clean throughout.
+
 ### Ink token contrast lift (GYM_TASKS.md Task 0)
 Global readability fix, token-level only — no component touched. The six `--ink*` tokens
 in `src/index.css` were too dark against `--ground` (#000000): three of them failed WCAG
