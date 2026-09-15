@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
-// Owns all four Output states from the design — idle / streaming / error / complete —
-// exactly one renders at a time, matching the handoff's own component-mapping table.
+// Owns all Output states — idle / streaming / error / invitation / complete — exactly
+// one renders at a time, matching the handoff's own component-mapping table.
 export default function RoastCard({
   status,
   roast,
@@ -12,8 +12,10 @@ export default function RoastCard({
   severity,
   personaName,
   modelUsed,
+  signedIn,
   onRetry,
   onRoastAnother,
+  onSignIn,
 }) {
   const [checked, setChecked] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -99,11 +101,7 @@ get roasted at roastify.vercel.app`;
       <section className="row">
         <div className="row-label row-label--accent">Generating</div>
         <div className="out-body">
-          <div className="stream-line">
-            <span className="stream-line-label">{streamStage}</span>
-            <span className="stream-spacer" />
-            <span>{roast.length} chars</span>
-          </div>
+          <div className="stream-line">{streamStage}</div>
           <p className="stream-text">
             {roast}
             <span className="caret" />
@@ -114,6 +112,32 @@ get roasted at roastify.vercel.app`;
   }
 
   if (status === "error") {
+    // A signed-out user hitting the server's Instagram sign-in gate is a tier boundary,
+    // not a failure — it must never render as a labelled error row (see CLAUDE.md's
+    // "Auth & persistence"). In normal use the locked source cell prevents this from
+    // ever being reached; this only covers a session expiring mid-flow.
+    if (error.code === "SIGN_IN_REQUIRED") {
+      return (
+        <section className="row">
+          <div className="row-label">Output</div>
+          <div className="invitation-body">
+            <div className="invitation-top">
+              <span className="invitation-icon">&#8226;</span>
+              <span className="invitation-msg">{error.message}</span>
+            </div>
+            <div className="invitation-actions">
+              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
+                github
+              </button>
+              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
+                google
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section className="row error-enter">
         <div className="row-label row-label--accent">Error</div>
@@ -148,11 +172,9 @@ get roasted at roastify.vercel.app`;
 
         <section className="row meta-row">
           <div className="row-label" />
-          <div className="meta-grid">
-            <div className="meta-cell">Source · {type}</div>
-            <div className="meta-cell">Voice · {personaName}</div>
-            <div className="meta-cell">Pain · {severity}</div>
-            <div className="meta-cell">Fixes · {tips.length}</div>
+          <div className="meta-line">
+            {type} · {personaName} · {severity}
+            {signedIn ? " · saved" : ""}
           </div>
         </section>
 
@@ -168,7 +190,6 @@ get roasted at roastify.vercel.app`;
               const isChecked = checked.includes(i);
               return (
                 <label key={i} className={`fix-row${isChecked ? " is-checked" : ""}`}>
-                  <span className="fix-row-index">{String(i + 1).padStart(2, "0")}</span>
                   <span className="fix-row-checkbox">
                     <input
                       type="checkbox"

@@ -5,38 +5,33 @@ import { PERSONAS } from "../lib/personas";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-// Order matches the design handoff: the two URL sources adjacent, then the two PDF
-// sources adjacent, so the input area never changes kind between neighbouring cards.
+// Order matches the v3 design: the three open sources first, instagram (the only one
+// that can be locked or disabled) last — a source is never hidden, so this ordering
+// doesn't need to keep link/pdf kinds adjacent the way the old 4-card grid did.
 const PROFILE_TYPES = [
-  { value: "github", index: "01", name: "github", kind: "link", label: "Profile URL", placeholder: "https://github.com/username" },
-  { value: "instagram", index: "02", name: "instagram", kind: "link", label: "Profile URL", placeholder: "https://instagram.com/username" },
+  { value: "github", name: "github", kind: "link", label: "Profile url", placeholder: "https://github.com/username" },
   {
     value: "linkedin",
-    index: "03",
     name: "linkedin",
     kind: "pdf",
-    label: "Profile PDF",
+    label: "Profile pdf",
     hint: "Open your LinkedIn profile → More → Save to PDF",
     dropLabel: "drop your linkedin pdf",
     pastePlaceholder: "…or paste the text of your profile here.",
   },
   {
     value: "resume",
-    index: "04",
     name: "resume",
     kind: "pdf",
-    label: "Resume PDF",
+    label: "Resume pdf",
     hint: "PDF works best. Plain text is fine too.",
     dropLabel: "drop your resume pdf",
     pastePlaceholder: "…or paste your resume text here.",
   },
+  { value: "instagram", name: "instagram", kind: "link", label: "Profile url", placeholder: "https://instagram.com/username", gated: true },
 ];
 
-const SEVERITIES = [
-  { value: "mild", note: "gentle" },
-  { value: "medium", note: "honest" },
-  { value: "destroy me", note: "no mercy" },
-];
+const SEVERITIES = ["mild", "medium", "destroy me"];
 
 // Dev-only comparison options — production always uses the server's pinned default
 // (see resolveProductionSafeModelOption in api/roast.js) regardless of what's sent.
@@ -44,6 +39,16 @@ const MODELS = [
   { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
   { value: "gpt-4o", label: "GPT-4o" },
 ];
+
+// Instagram is the only source that can ever be anything but "open" — the kill switch
+// (instagramEnabled) outranks the sign-in lock, matching the design: if the scraper is
+// down, a signed-in user sees "off" too, not "sign in".
+function sourceState(source, { instagramEnabled, signedIn }) {
+  if (source.value !== "instagram") return "open";
+  if (!instagramEnabled) return "disabled";
+  if (!signedIn) return "locked";
+  return "open";
+}
 
 export default function InputForm({
   url,
@@ -59,14 +64,19 @@ export default function InputForm({
   onSubmit,
   loading,
   instagramEnabled,
+  signedIn,
+  onSignIn,
 }) {
   const [fileInfo, setFileInfo] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [dragging, setDragging] = useState(false);
+  // Which inline prompt is showing beneath the source grid — null, "locked" (needs
+  // sign-in), or "disabled" (kill switch off). Set by clicking a non-open source cell
+  // instead of selecting it.
+  const [prompt, setPrompt] = useState(null);
   const fileInputRef = useRef(null);
 
-  const visibleTypes = instagramEnabled ? PROFILE_TYPES : PROFILE_TYPES.filter((t) => t.value !== "instagram");
   const active = PROFILE_TYPES.find((t) => t.value === type) || PROFILE_TYPES[0];
   const isUploadType = active.kind === "pdf";
 
@@ -84,8 +94,28 @@ export default function InputForm({
     setUploadError("");
   }
 
+  // The prompt closes itself once the tier boundary that opened it is no longer in the
+  // way — signing in resolves a "locked" prompt (a "disabled" one, the kill switch, is
+  // unrelated to sign-in state, but clearing both on sign-in is harmless and simpler
+  // than tracking which one is showing).
+  const [prevSignedIn, setPrevSignedIn] = useState(signedIn);
+  if (signedIn !== prevSignedIn) {
+    setPrevSignedIn(signedIn);
+    if (signedIn) setPrompt(null);
+  }
+
   function handleKey(e) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit();
+  }
+
+  function handleSourceClick(source) {
+    const state = sourceState(source, { instagramEnabled, signedIn });
+    if (state === "open") {
+      onTypeChange(source.value);
+      setPrompt(null);
+    } else {
+      setPrompt(state);
+    }
   }
 
   async function extractPdfText(file) {
@@ -126,8 +156,8 @@ export default function InputForm({
       }
 
       onUrlChange(trimmedText);
-      setFileInfo({ name: fileName, chars: trimmedText.length });
-      setUploadStatus(`extracted ${trimmedText.length} characters from ${fileName}`);
+      setFileInfo({ name: fileName });
+      setUploadStatus(`extracted text from ${fileName}`);
     } catch {
       setUploadError(`Couldn't read "${fileName}" — try a different file, or paste the text instead.`);
     }
@@ -153,35 +183,66 @@ export default function InputForm({
     }
   }
 
+  const promptIsLock = prompt === "locked";
+
   return (
     <div className="input-form">
-      {/* 4. Source row */}
+      {/* Source row */}
       <section className="row">
         <div className="row-label">Source</div>
-        <div className="source-grid">
-          {visibleTypes.map((t) => {
-            const selected = type === t.value;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                className={`source-card${selected ? " is-selected" : ""}`}
-                disabled={loading}
-                onClick={() => onTypeChange(t.value)}
-              >
-                <span className="source-card-bar" />
-                <span className="source-card-meta">
-                  <span className="source-card-index">{t.index}</span>
-                  <span className="source-card-kind">{t.kind}</span>
+        <div>
+          <div className="source-grid">
+            {PROFILE_TYPES.map((t) => {
+              const state = sourceState(t, { instagramEnabled, signedIn });
+              const selected = type === t.value && state === "open";
+              let tagText = t.kind === "link" ? "link" : "pdf";
+              if (state === "locked") tagText = "sign in";
+              if (state === "disabled") tagText = "off";
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  className={`source-card${selected ? " is-selected" : ""}${state === "locked" ? " is-locked" : ""}${state === "disabled" ? " is-disabled" : ""}`}
+                  disabled={loading}
+                  onClick={() => handleSourceClick(t)}
+                >
+                  <span className="source-card-bar" />
+                  <span className="source-card-name">{t.name}</span>
+                  <span className="source-card-tag">{tagText}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {prompt && (
+            <div className={`source-prompt${promptIsLock ? " is-invitation" : ""}`}>
+              <div className="source-prompt-body">
+                <span className="source-prompt-mark">{promptIsLock ? "•" : "—"}</span>
+                <span className="source-prompt-text">
+                  {promptIsLock
+                    ? "Instagram needs an account — it's the only source that costs us to run. Sign in and your daily limit goes to 15 as well."
+                    : "Instagram is temporarily unavailable. The other three sources are unaffected."}
                 </span>
-                <span className="source-card-name">{t.name}</span>
+              </div>
+              {promptIsLock && (
+                <div className="source-prompt-actions">
+                  <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
+                    github
+                  </button>
+                  <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
+                    google
+                  </button>
+                </div>
+              )}
+              <button type="button" className="source-prompt-close" onClick={() => setPrompt(null)}>
+                close
               </button>
-            );
-          })}
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 5. Input row */}
+      {/* Input row */}
       <section className="row">
         <div className="row-label">{active.label}</div>
         <div>
@@ -197,7 +258,6 @@ export default function InputForm({
                 placeholder={active.placeholder}
                 disabled={loading}
               />
-              <span className="cmd-hint">cmd + enter</span>
             </div>
           )}
 
@@ -241,7 +301,6 @@ export default function InputForm({
                 <div className="file-row">
                   <span className="file-check">&#10003;</span>
                   <span className="file-name">{fileInfo.name}</span>
-                  <span className="file-chars">{fileInfo.chars.toLocaleString()} chars extracted</span>
                   <button
                     type="button"
                     className="file-replace"
@@ -281,46 +340,44 @@ export default function InputForm({
         </div>
       </section>
 
-      {/* 6. Voice row — persona + severity */}
-      <section className="voice">
+      {/* Voice row — persona only, three across */}
+      <section className="row">
         <div className="row-label">Voice</div>
-        <div className="persona-col">
-          <div className="voice-header">Persona</div>
-          {PERSONAS.map((p, i) => {
+        <div className="persona-grid">
+          {PERSONAS.map((p) => {
             const selected = persona === p.value;
             return (
               <button
                 key={p.value}
                 type="button"
-                className={`stack-cell${selected ? " is-selected" : ""}`}
+                className={`persona-cell${selected ? " is-selected" : ""}`}
                 disabled={loading}
                 onClick={() => onPersonaChange(p.value)}
               >
-                <span className="stack-cell-bar" />
-                <span className="persona-cell-top">
-                  <span className="persona-cell-index">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="persona-cell-name">{p.name}</span>
-                </span>
+                <span className="persona-cell-bar" />
+                <span className="persona-cell-name">{p.name}</span>
                 <span className="persona-cell-note">{p.tagline}</span>
               </button>
             );
           })}
         </div>
-        <div className="severity-col">
-          <div className="voice-header">Severity</div>
+      </section>
+
+      {/* Severity row — its own row now, not a column beside persona */}
+      <section className="row">
+        <div className="row-label">Severity</div>
+        <div className="severity-row">
           {SEVERITIES.map((sv) => {
-            const selected = severity === sv.value;
+            const selected = severity === sv;
             return (
               <button
-                key={sv.value}
+                key={sv}
                 type="button"
-                className={`stack-cell${selected ? " is-selected" : ""}`}
+                className={`severity-cell${selected ? " is-selected" : ""}`}
                 disabled={loading}
-                onClick={() => onSeverityChange(sv.value)}
+                onClick={() => onSeverityChange(sv)}
               >
-                <span className="stack-cell-bar" />
-                <span className="severity-cell-name">{sv.value}</span>
-                <span className="severity-cell-note">{sv.note}</span>
+                {sv}
               </button>
             );
           })}

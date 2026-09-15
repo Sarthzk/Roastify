@@ -65,7 +65,14 @@ async function consumeRoastStream(res, onRoastChunk) {
   return result;
 }
 
-export async function getRoast(url, type, severity = "medium", model, persona, { onRoastChunk } = {}) {
+// `accessToken`, when present, is the current Supabase session's JWT — sent as a Bearer
+// token so the server can derive the caller's identity itself (api/_lib/auth.js). Never
+// sent as a user id in the request body; the server never trusts one.
+function authHeaders(accessToken) {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
+export async function getRoast(url, type, severity = "medium", model, persona, { onRoastChunk, accessToken } = {}) {
   // No default for `model` — a caller that explicitly passes `undefined` (production,
   // where the picker is hidden) must get a request with no `model` field at all, not
   // one silently re-filled with a default. The server pins the model regardless; this
@@ -77,7 +84,7 @@ export async function getRoast(url, type, severity = "medium", model, persona, {
 
   const res = await fetch("/api/roast", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(accessToken) },
     body: JSON.stringify(body)
   });
 
@@ -96,12 +103,30 @@ export async function getRoast(url, type, severity = "medium", model, persona, {
   return data;
 }
 
-export async function getRateLimitStatus() {
-  const res = await fetch("/api/rate-limit-status");
+export async function getRateLimitStatus(accessToken) {
+  const res = await fetch("/api/rate-limit-status", { headers: authHeaders(accessToken) });
 
   if (!res.ok) {
     throw new Error(`Failed to fetch rate limit status: ${res.statusText}`);
   }
 
   return res.json();
+}
+
+// `cursor` is the previous page's `nextCursor` (an ISO created_at timestamp) — omit for
+// the first page. Throws the same envelope-derived Error as getRoast on a non-2xx
+// response (SIGN_IN_REQUIRED when signed out or the token's expired, mainly).
+export async function getHistory(accessToken, cursor) {
+  const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const res = await fetch(`/api/history${params}`, { headers: authHeaders(accessToken) });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to fetch history: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
 }

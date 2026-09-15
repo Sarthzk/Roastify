@@ -6,6 +6,144 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-13
+
+### v3 redesign: routing, header auth, tier-aware source states, history page
+Full detail in `ROASTIFY_TASKS.md` Section 15; summary here. Implemented from a Claude
+Design handoff (`design_handoff_roastify_v3/` in the linked Claude Design project — read
+via the DesignSync MCP tool, same as the v2 session). The bundle held three handoff
+generations; `design_handoff_roastify_v2/README.md` explicitly marked itself superseded
+by v3 (banner: "Do not implement from this package"), so it was deleted from the bundle
+rather than left for a future session to pick up by mistake. v3's own README was the
+spec; where it and the `.dc.html` prototype's exact template/style strings disagreed
+(rare), the `.dc.html` won, per the design's own stated fidelity rule.
+
+Added `react-router-dom` and three routes (`/`, `/history`, `/r/:slug`) under one shared
+`<Layout>` (header + footer). Session state moved from `App.jsx` into `Layout.jsx` (every
+route needs it); roaster-specific state (url/type/severity/persona/result/etc.) moved
+into a new `Roaster.jsx` and stayed there rather than being lifted higher — the v3
+handoff is explicit that roaster form state resets on navigation, which falls out for
+free from a route component's own local state unmounting rather than needing to be
+engineered. `vercel.json` got a catch-all SPA rewrite so a direct hit on `/history` in
+production doesn't 404.
+
+Header gained real nav (active-state styling from the current route) and real auth: a
+signed-out "sign in ▾" trigger opens a dropdown panel (GitHub/Google, closes on
+selection/outside-click/Escape/successful sign-in); signed in shows an avatar-square
+initial + handle + sign out. The old static "no login / free" tags are gone — Sign-in UI
+now, or the plain "no login" tag only when Supabase isn't configured at all.
+
+Source cells are never hidden now, for either "requires sign-in" or "kill-switch
+disabled" — a real behavior change from the previous session's implementation, which hid
+the Instagram card outright when `INSTAGRAM_ENABLED=false`. Per the v3 handoff, hiding a
+locked source removes the incentive to sign in; the kill switch outranks the lock (a
+signed-in user sees "off" too if the scraper itself is down). Clicking a non-open source
+opens an inline prompt row instead of selecting it — invitation marker + direct
+GitHub/Google buttons for "locked," a plain note for "disabled." The exact "Instagram
+needs an account... the scrape runs against your session" prompt copy in the handoff
+was rewritten before shipping — that specific technical claim isn't true of this app's
+architecture (Apify doesn't run against the user's browser session); swapped for the
+real reason (Instagram is the only paid dependency), keeping the tone and the "limit
+goes to 15" detail intact. Similarly the kill-switch prompt's "their markup changed and
+our reader is broken" was swapped for the existing honest `SOURCE_UNAVAILABLE` phrasing,
+since the app has no way to know the real reason a human flipped the switch.
+
+Severity split out of the old persona+severity "Voice" row into its own gutter row
+(matching v3's own reasoning: two decisions that used to compete for one label now each
+get one), and lost its "gentle/honest/no mercy" sublabels — confirmed against the
+`.dc.html`'s own severity-cell template, which renders only the raw value string in v3,
+unlike v2. Persona moved from a 3-stacked column to a 3-across grid sharing the source
+grid's cell shape; index numbers were dropped from both (decorative, per the handoff's
+own diff list). The hero's "what it reads" side panel and the "how it works" 3-step
+strip are both gone — output/meta collapsed from a 4-cell grid to one text line; the
+streaming character counter and its spacer rule are gone; the rate-limit tick meter is
+gone (the number alone is the whole message now, with a real sign-in upsell link
+replacing it when signed out, and "saved to your history" when signed in).
+
+Added a new `SIGN_IN_REQUIRED`-driven "invitation" Output state, visually distinct from
+the real `Error` state (outlined marker + bullet vs. the filled amber `!` square, no
+`ERROR` label) — the v3 handoff is explicit that a tier boundary must never read as a
+failure. In practice this is defense in depth: the locked source cell already prevents
+submitting Instagram while signed out, so this only fires if a session expires mid-flow.
+
+New `GET /api/history` endpoint (the only API surface touched, per instruction) backs
+the new `/history` page: rejects a missing/invalid JWT with `SIGN_IN_REQUIRED` (reusing
+the existing error code), otherwise queries through a new
+`api/_lib/supabaseUser.js`-built client scoped to the caller's own JWT (anon key +
+`Authorization` header) rather than the service-role admin client used elsewhere — so
+it's Postgres RLS itself, not application code, that restricts the result to the
+caller's own rows, matching the "read own roasts" policy the auth-task migration already
+created. Paginated 25 at a time via a `?cursor=` (ISO `created_at`) query param. History
+rows for `linkedin`/`resume` show no identifier (`—`) since raw pasted/PDF text was never
+persisted in the first place — a real, visible consequence of a decision from the
+previous session, not a bug in this one.
+
+Verification: 120/120 tests (115 previous + 5 new in `api/history.test.js` — JWT
+rejection paths as real code-path tests; "only the caller's rows" asserted as "queries
+via a client scoped to exactly this caller's token, never any other," since RLS itself
+isn't unit-testable without a live Supabase project), lint/build clean, confirmed
+`SUPABASE_SERVICE_ROLE_KEY` still absent from the built bundle (same fake-secret-at-
+build-time grep as the previous session). Manually clicked through the running app:
+desktop layout for every row (source states, inline prompts, voice grid, severity row,
+rate strip copy in both auth states), the header sign-in panel opening/closing, direct
+URL entry to `/history` (signed-out locked panel) and `/r/some-test-slug` (shell state),
+a full anonymous GitHub roast end-to-end with the new one-line meta format, and the
+≤600px mobile breakpoint (header collapses to stacked bands, source grid to 2×2, gutter
+labels go full-width) via an injected same-origin iframe — `resize_window` did not
+actually change the viewport in this environment, so genuine window-resize testing was
+not possible; the iframe approach exercises the same CSS media queries against the real
+rendered page. No console errors at any point; the one server-log line seen
+(`persistRoast` failing open on the still-unapplied `roasts` migration) is a carryover
+from the previous session, not something this one touched or introduced.
+
+## 2026-09-12
+
+### Supabase auth + Postgres persistence
+Full detail in `ROASTIFY_TASKS.md` Section 14; summary here. Foundation work for chat
+and public share pages later — this session built the schema and persistence, not those
+features. Anonymous use keeps working with no login wall, per explicit instruction.
+
+Added `@supabase/supabase-js`, GitHub + Google OAuth (both already enabled in the
+Supabase dashboard, redirect URLs already registered — no setup instructions needed
+here), and real SQL migrations in `supabase/migrations/` (`roasts` + `reports`, RLS
+enabled from the start, no ORM). Server verifies the JWT on every request
+(`api/_lib/auth.js`) and derives the user id itself — never trusts a client-sent one.
+Rate limiting re-keyed for two tiers (`api/_lib/rateLimit.js`): anonymous 3/day by IP,
+signed-in 15/day by user id, replacing the old flat 5/hour. Instagram now requires
+signing in (Apify is the app's only paid dependency) — enforced server-side
+(`SIGN_IN_REQUIRED`, 401), independent of the existing `INSTAGRAM_ENABLED` kill switch;
+`api/rate-limit-status.js` reports both `instagramEnabled` and `signedIn` so the UI can
+tell the two "Instagram unavailable" reasons apart, and `InputForm.jsx` keeps the
+Instagram card visible-but-locked for anonymous users rather than hiding it. Every
+completed roast is now persisted (`api/_lib/persistRoast.js`, service role key,
+fail-open) — anonymous roasts too, just unattributed (`user_id` null), for analytics;
+never the raw scraped/pasted profile text.
+
+Frontend: `App.jsx` picked up `session` state (plain `useState` + `onAuthStateChange`,
+no state library) and the header now renders real sign-in (GitHub/Google)/sign-out
+controls in the existing monospace-caps/hard-rule/zero-radius design language, replacing
+the old static "no login / free" tags — falling back to the original "no login" tag when
+Supabase env vars are absent (a fork, or local dev without a project), which the whole
+feature is built to degrade to rather than crash on.
+
+Verification: 115/115 tests (95 previous + 20 new, covering JWT verification,
+tier-based rate-limit keying, and the anonymous-Instagram-rejection path — all against a
+mocked Supabase, no live calls), lint/build clean, and confirmed
+`SUPABASE_SERVICE_ROLE_KEY` never reaches the built client bundle (grepped `dist/` for
+both the env var name and a fake secret value injected only at build time). Ran the app
+locally end-to-end via the two local dev processes: verified the anonymous UI (locked
+Instagram card, header sign-in buttons), completed a full anonymous GitHub roast, hit
+the Instagram sign-in gate as an anonymous user, and confirmed the GitHub OAuth button
+redirects correctly to GitHub's real authorize screen with the right
+`client_id`/`redirect_uri` — did not complete an actual login, since that needs the
+user's own credentials. That local run also surfaced that the migration hasn't been
+applied to the connected Supabase project yet (`persistRoast` failed open exactly as
+designed, logging the missing-table error instead of breaking the roast) — applying it
+is a follow-up step for the user, documented in the README's new "Sign in and roast
+history" section.
+
+---
+
 ## 2026-08-23
 
 ### Cleanup pass: dead dependencies, zoom/breakpoint audit, doc accuracy

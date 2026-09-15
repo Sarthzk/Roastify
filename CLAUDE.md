@@ -19,6 +19,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tests assert behaviour, not implementation detail.
 - When a task is done, re-read the full diff and remove anything that isn't load-bearing.
 
+## Git workflow
+
+- All work happens on the `dev` branch. Don't create a new branch per task, and never
+  commit directly to `main`.
+- If `dev` doesn't exist, create it from `main`. If it does, make sure it's checked up to
+  date before starting.
+- Before starting any work, confirm the working tree is clean. If it isn't, stop and tell
+  the user rather than committing changes that aren't yours.
+- Commit when the task is complete and verified — lint, tests, and build all passing. Not
+  before.
+- Write a real commit message: a short subject line describing what changed, then a body
+  explaining why. Match the level of detail in `WORK_LOG.md`.
+- Push `dev` to origin after committing, every time. This is the backup — no task ends
+  with work sitting only on the local machine.
+- Do not merge to `main`, do not open a PR, do not force-push. The user reviews and
+  merges to `main` themselves.
+
 ## Commands
 
 ```
@@ -47,7 +64,9 @@ from values like real `dotenv` does) — required vars: `GROQ_API_KEY`, `APIFY_A
 `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`; add `OPENAI_API_KEY` (or `VITE_OPENAI_API_KEY`)
 too if you want the dev-only GPT-4o comparison option to work locally (requires `NODE_ENV=development`
 — see "Model selection" below). `INSTAGRAM_ENABLED` is optional (defaults to enabled) — see the
-Instagram kill switch note under "Request flow" below.
+Instagram kill switch note under "Request flow" below. `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` /
+`SUPABASE_SERVICE_ROLE_KEY` are all optional together — see "Auth & persistence" below; the app runs
+fully anonymous-only with all three unset.
 
 ### Linting
 `eslint.config.js` globally ignores `api/**` (and a nonexistent `roastify-backend/**`), so
@@ -84,8 +103,15 @@ map. It was ~935 lines holding four unrelated concerns before that split; it's ~
        after the persona/type check, before rate limiting, and rejects a disabled Instagram request
        with `SOURCE_UNAVAILABLE` (503) — see "Error handling" below. `api/rate-limit-status.js` also
        reports `instagramEnabled` in every response shape (reusing the endpoint the frontend already
-       polls on page load rather than adding a new one), and `InputForm.jsx` hides the Instagram
-       source card when it's false.
+       polls on page load rather than adding a new one). **Separately**, Instagram also requires
+       sign-in — checked right after the kill switch, same early-exit spot, rejecting an anonymous
+       instagram request with `SIGN_IN_REQUIRED` (401) — see "Auth & persistence" below for why
+       (Apify is the app's only paid dependency) and "Error handling" for the error code. The two
+       checks are independent: the kill switch is an operational "Apify itself is broken" state,
+       sign-in is a permanent product policy, and either one alone is enough to reject the request —
+       but the kill switch outranks the lock in `InputForm.jsx`'s own state (see "Routing and page structure"
+       below): a signed-in user sees Instagram as `off`, not selectable, if the scraper itself is
+       down. Neither state hides the card — see "Routing and page structure" for why.
    - **Uploaded** (`linkedin`, `resume`) — no scraping at all; the request body already carries the
      text, and the handler just passes it straight through as `profileData` (not cached — there's
      nothing to re-fetch). `InputForm.jsx` shows the same PDF-upload + paste-textarea UI for both
@@ -183,11 +209,12 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
   (GitHub/Apify itself failed), 504 `SCRAPE_TIMEOUT` (Instagram's Apify poll ran out of attempts).
   503 `SOURCE_UNAVAILABLE` is a separate case, not a scrape failure — it fires before any scrape is
   attempted, when `type === "instagram"` and the `INSTAGRAM_ENABLED` kill switch (see "Request flow"
-  above) is off.
+  above) is off. 401 `SIGN_IN_REQUIRED` is likewise not a scrape failure — it fires when
+  `type === "instagram"` and the request has no valid Supabase JWT (see "Auth & persistence" below).
 - **`MISSING_INPUT`** (400): the request body's `url` field (which, for `linkedin`/`resume`, actually
   holds pasted-or-PDF-extracted text) is empty *or whitespace-only* — the trim check is the
   server-side backstop for a failed/empty client-side PDF extraction, in case `InputForm.jsx`'s own
-  guard (see "Frontend structure" below) is ever bypassed.
+  guard (see "Routing and page structure" below) is ever bypassed.
 - **Three distinct failure phases**, each handled differently:
   1. *Scrape failures* (before any response format is committed) → real HTTP status + envelope, no
      SSE ever entered.
@@ -214,7 +241,7 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
   design's own instruction ("where nothing can be retried, omit the button; the detail line carries
   the resolution"). Rate-limit errors (429) are deliberately `retryable: false` even though the
   request would eventually succeed — retrying immediately would just 429 again, and the error's own
-  detail line already carries a real countdown (see "Frontend structure" below), so a generic "try
+  detail line already carries a real countdown (see "Routing and page structure" below), so a generic "try
   again now" affordance would be misleading there.
 
 ### Prompt layer & personas
@@ -316,17 +343,101 @@ the actual block. `handleCorsPreflight(req, res)` (the function `api/roast.js` /
 `api/rate-limit-status.js` actually call) applies this and additionally ends the response for an
 `OPTIONS` preflight. See `api/_lib/cors.test.js`.
 
+### Auth & persistence
+Sign-in (GitHub + Google OAuth via Supabase Auth) is optional infrastructure layered on
+top of an app that already worked fully anonymously — it must never become a login wall.
+Every piece here degrades to "everyone is anonymous" when Supabase env vars are absent
+(a fork, or local dev without a project), never a crash.
+
+- **Client** (`src/lib/supabaseClient.js`): builds a `supabase` client from
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` — both are safe to expose to the browser
+  (RLS, not secrecy of the anon key, is what protects data; see the migration below).
+  `isSupabaseConfigured` is `false` (and `supabase` is `null`) when either is missing;
+  `App.jsx` and `InputForm.jsx` both check it before rendering any sign-in UI, so a
+  fork with no Supabase project just never shows one.
+- **Session state** lives in `App.jsx` alongside everything else (`useState` + a
+  `supabase.auth.onAuthStateChange` subscription in a `useEffect`) — no state library,
+  same as the rest of the app. `signIn(provider)` calls `supabase.auth.signInWithOAuth`
+  (redirects to GitHub/Google and back); `signOut()` calls `supabase.auth.signOut()`.
+  The header (previously a static "no login / free" tag pair) now renders sign-in/sign-
+  out controls in the same monospace-caps/hard-rule/zero-radius language as everything
+  else (`.hmeta-action` in `src/index.css`, a button-reset sharing `.hmeta-item`'s
+  layout) — or the original "no login" tag when Supabase isn't configured at all.
+- **Server-side verification** (`api/_lib/auth.js`): `getAuthenticatedUser(req)` reads
+  the `Authorization: Bearer <jwt>` header and calls `supabaseAdmin.auth.getUser(token)`
+  — validated against Supabase Auth itself, never decoded/trusted locally. Returns
+  `{ id, email }` or `null` (never a client-sent id) for a missing header, invalid/
+  expired token, or unconfigured Supabase. `getRoast()`/`getRateLimitStatus()`
+  (`src/lib/openai.js`) attach this header whenever `App.jsx` has a session; the server
+  never receives or trusts a user id from the request body.
+- **Admin client** (`api/_lib/supabaseAdmin.js`): a lazily-built, memoized client using
+  `SUPABASE_SERVICE_ROLE_KEY` (server-only — no `VITE_` prefix, so Vite never inlines it
+  into the client bundle; this is verified after every build, see "Verification" in
+  `ROASTIFY_TASKS.md`'s auth section). `isSupabaseConfigured()` gates every caller.
+- **Persistence** (`api/_lib/persistRoast.js`): after a roast completes (parsed
+  `{ roast, tips }`, before the `complete` SSE event is sent), `persistRoast()` inserts
+  one row into `roasts` via the service role key — deliberately bypassing RLS, since the
+  server is the only writer this table ever gets (see the migration's own comment on why
+  there's no INSERT policy for anon/authenticated). `user_id` is always the id
+  `getAuthenticatedUser()` derived, or `null` for an anonymous request — every roast is
+  stored either way (anonymous rows are analytics-only: not attributed, not listed in
+  anyone's history), never the raw scraped/pasted profile text (no PII, same principle
+  as `logFailure()`'s no-PII logging rule above). Fails open on any write error, same
+  fail-open posture as `withScrapeCache` — persistence is a product feature, not a
+  correctness requirement for the roast the caller already received.
+- **Schema** (`supabase/migrations/`): real SQL migration files, not an ORM or runtime
+  table creation. `roasts` (`user_id` nullable, `type`, `identifier`, `persona`,
+  `severity`, `model`, `roast`, `tips` jsonb, plus `visibility`/`slug` — nullable and
+  unused today, added now so a future public-share-page feature is additive rather than
+  a schema rewrite) and `reports` (for moderating shared content later — schema only,
+  no application code touches it yet). RLS is enabled on both from row one: a user can
+  `select`/`delete` only rows where `auth.uid() = user_id` (which is never true for an
+  anonymous row via the anon key, by construction — no special-cased policy needed);
+  there is deliberately no INSERT policy for anon/authenticated on either table, since
+  every write goes through the service role key server-side. No `profiles` or scrape-
+  cache table — the existing Redis scrape cache (`api/_lib/scrapeCache.js`) already
+  covers that, and two caches would just be redundant.
+- **Instagram sign-in gate**: see the "Request flow" and "Error handling" sections above
+  — `SIGN_IN_REQUIRED` (401), independent of the `INSTAGRAM_ENABLED` kill switch.
+  `api/rate-limit-status.js` reports `signedIn` (alongside the existing
+  `instagramEnabled`) specifically so the UI can tell these two "Instagram unavailable"
+  reasons apart. As of the v3 redesign (see "Routing and page structure" below), the Instagram
+  source card is never hidden for either reason — a locked or disabled source cell still
+  reads as "here's what you're missing," which hiding it can't — it only changes tag and
+  clicking it opens an inline prompt (sign-in buttons for "locked", an explanatory note
+  with no buttons for "disabled") instead of selecting it.
+- **History endpoint** (`api/history.js`, `GET`, added for the `/history` route — see
+  "Routing and page structure" below): rejects a missing/invalid JWT with
+  `SIGN_IN_REQUIRED` (401, reusing the same error code as the Instagram gate — same
+  underlying "sign in for this" semantics). Otherwise queries `roasts` through
+  `api/_lib/supabaseUser.js`'s `getSupabaseClientForUser(token)` — a per-request client
+  built from the anon key plus the caller's own JWT as the `Authorization` header, not
+  the service-role admin client — so the query runs *as that user* and it's Postgres RLS
+  itself (the migration's "read own roasts" policy), not application code, that actually
+  restricts the result to their rows. Paginated 25 at a time via an optional `?cursor=`
+  query param (an ISO `created_at` timestamp — `.lt("created_at", cursor)`), returning
+  `{ roasts, nextCursor }` (`nextCursor` is `null` once a page comes back short). See
+  `api/history.test.js` — the JWT-rejection paths are real code-path tests; "only the
+  caller's rows" is asserted as "queries via a client scoped to exactly this caller's
+  token, never any other," since RLS itself (the actual guarantee) isn't something a
+  unit test can exercise without a live Supabase project.
+
 ### Rate limiting & caching
 `api/_lib/rateLimit.js` exports `createRedisClient()` (shared by rate limiting and scrape caching),
-`getClientIP`, `createRatelimit()`, and `RATE_LIMIT_MAX` (`= 5`, imported by `api/rate-limit-status.js`
-for its own unavailable-Redis fallback response). `RATE_LIMIT_WINDOW` (`"1 h"`) is *not* exported —
-nothing outside this file ever needed it; it was exported for no reason until a cleanup pass noticed
-and fixed it. `createRatelimit()` builds an Upstash Redis sliding-window limiter from both constants.
-- `api/roast.js` consumes one token per request and fails open (logs and continues without limiting)
-  if Upstash is unreachable.
+`getClientIP`, `createRatelimit(tier)`, `getRateLimitKey(user, ip)`, and `RATE_LIMIT_TIERS`
+(`{ anonymous: { max: 3, window: "1 d" }, authenticated: { max: 15, window: "1 d" } }`). Two tiers,
+not one flat limit, now that a request can be attributed to a signed-in user (see "Auth & persistence"
+above) instead of only an IP — daily windows, not the original hourly one. `createRatelimit(tier)`
+builds an Upstash Redis sliding-window limiter for that tier, each with its own `prefix` (so the same
+key string can never collide across tiers); `getRateLimitKey(user, ip)` returns `user:<id>` when signed
+in, `ip:<ip>` otherwise, so a signed-in user's quota follows their account rather than the device/
+network they're on, and anonymous/signed-in use on the same device never shares a bucket.
+- `api/roast.js` resolves the tier and key from `getAuthenticatedUser(req)` before consuming one token,
+  and fails open (logs and continues without limiting) if Upstash is unreachable.
 - `api/rate-limit-status.js` is a separate, non-consuming `GET` endpoint (`ratelimit.getRemaining()`)
-  that the frontend calls on page load so it can show remaining-roasts / cooldown state before the
-  user ever submits, not just react to a 429 after the fact.
+  that the frontend calls on page load (and again on every sign-in/sign-out, since the tier changes)
+  so it can show remaining-roasts / cooldown state before the user ever submits, not just react to a
+  429 after the fact. It also reports `signedIn`/`tier` — see "Auth & persistence" above.
 - **Dev-only bypass**: both endpoints skip the Upstash check entirely when
   `process.env.NODE_ENV === "development"` — same `NODE_ENV` pattern as
   `resolveProductionSafeModelOption` and the `_debug_scraped_*` payload (see "Model selection"
@@ -345,107 +456,129 @@ and fixed it. `createRatelimit()` builds an Upstash Redis sliding-window limiter
   have no entry — they're not scraped at all, so there's nothing to cache. See
   `api/_lib/scrapeCache.test.js`.
 
-### Frontend structure
-Redesigned 2026-08-21 from a Claude Design handoff (full-bleed modular grid, a persistent left label
-gutter, hard rules, display-scale type — see WORK_LOG.md for the session). Same state, same API
-contract; only the presentation layer and the CSS approach changed. **Component boundaries now match
-the design's own file-mapping table**, not the old card-based layout's boundaries:
+### Routing and page structure
+Redesigned 2026-08-21 (v2) and again 2026-09-13 (v3) from Claude Design handoffs — see
+`WORK_LOG.md` for both sessions. v3 added real routing (`react-router-dom`), the header's nav/auth,
+tier-aware source states, and a `/history` page; the v2 entry below is superseded except where noted.
+**Component boundaries match the design's own file-mapping table**, not an ad-hoc split:
 
-- `src/App.jsx` — owns all top-level state (`url`, `type`, `severity`, `persona`, `model`, `result`,
-  `loading`, `error`, `rateLimitStatus`, `resetKey`) and renders the header bar, hero, the
-  how-it-works strip, `<InputForm>`, the submit button + progress rule + rate-limit strip (moved here
-  from `InputForm` — see below), `<RoastCard>` for the Output section, and the footer. Single page,
-  no router. `status` (`"idle" | "streaming" | "error" | "complete"`) is derived, not stored, straight
-  from `loading`/`error`/`result` and passed to `RoastCard`. `describeError(err, { type })` turns a
-  thrown error into the `{ message, detail, retryable }` shape the Output error state renders —
-  `detail` is synthesized from real data only, never fabricated: a `RATE_LIMITED` error gets a real
-  countdown from `err.rateLimit.reset` (attached to the error itself, not the possibly-stale
-  `rateLimitStatus` state), a scrape-family error names the source type that was checked (never the
-  raw submitted text, which could be pasted resume/profile content), everything else falls back to a
-  plain `err_{code}` machine string. "Roast another" (`handleRoastAnother`) clears `result`/`error`/
-  `url` and bumps `resetKey`, which is passed to `<InputForm key={resetKey}>` — remounting it clears
-  its own local upload state (file confirmation, upload status/error) for free, rather than lifting
-  that presentation-only state up into `App.jsx`.
-- `src/components/InputForm.jsx` — the source row (4 cards, ordered `github → instagram → linkedin →
-  resume` so the two URL sources are adjacent and the two PDF sources are adjacent — hidden down to 3
-  when `instagramEnabled` is false, the Instagram kill switch's frontend half, see "Request flow"
-  above), the input row (a URL field for `github`/`instagram`, or a shared upload UI for
-  `linkedin`/`resume` — `isUploadType = active.kind === "pdf"`), and the voice row (persona +
-  severity, two stacked-cell columns sharing one gutter label). No longer renders its own submit
-  button — that moved to `App.jsx` (see above); still owns `Cmd/Ctrl+Enter` handling in its own
-  fields via an `onSubmit` prop. The upload UI supports both click-to-browse (a hidden
-  `<input type=file>` triggered via a ref) and real HTML5 drag-and-drop onto the drop zone — both
-  paths funnel through one shared `processFile(file)` (extraction via `extractPdfText()` /
-  `pdfjs-dist` for a PDF, `file.text()` for `.txt`) rather than duplicating the validation/extraction
-  logic per entry point. `linkedin` shows a one-line hint above the upload ("Open your LinkedIn
-  profile → More → Save to PDF, then upload it here."). Extraction failures (unreadable file, wrong
-  file type, or a PDF with no extractable text) set an `uploadError` string shown in place of the
-  status line — previously a failed extraction failed silently in a bare `catch {}`. Local state
-  (`fileInfo`, `uploadStatus`, `uploadError`, `dragging`) resets when `type` changes, via the "adjust
-  state during render" pattern (compare against a `prevType` ref-like state var, not a `useEffect` —
-  React's own lint rule flags a synchronous `setState` inside an effect body as an avoidable extra
-  render pass) rather than an effect. Also has a severity picker and a persona picker (both real
-  production features, values from `src/lib/personas.js`'s `PERSONAS` for persona — never hardcoded
-  in the component, per the redesign's explicit requirement), and a model picker (values must match
-  `MODEL_OPTIONS` keys in `api/roast.js`) that only renders when `import.meta.env.DEV` — the redesign
-  has no slot for it (no model name ever appears in the production design), so it's appended as one
-  more gutter row, invisible outside dev.
-- `src/components/RoastCard.jsx` — owns all four Output states from the design (idle / streaming /
-  error / complete), exactly one renders at a time, driven by the `status` prop from `App.jsx`.
-  Streaming shows a stage label derived from **real stream lifecycle**, not a timer: no roast text
-  has arrived yet (`"reading profile…"`) vs. tokens are actively arriving (`"printing…"`) — the
-  design's own prototype drives this with a fake `setInterval` cycling through GitHub-flavored
-  copy ("counting abandoned repos…"), which was deliberately not ported; a timer-based rotation would
-  misrepresent what's actually happening and the GitHub-specific phrase would read as a bug on a
-  non-GitHub roast. Complete shows the roast, a meta row (source/persona-name/severity/tip-count),
-  and the interactive tip checklist (a real `<input type="checkbox">`, visually hidden, for
-  keyboard/screen-reader support, same technique as before — the checked glyph is now the literal
-  `✓` text character per the design's "no icon fonts, no SVG" rule, replacing the old inline SVG
-  checkmark) plus share (`navigator.share` with clipboard-copy fallback), save-as-image
-  (`html2canvas`), and "roast another" actions. `checked` resets whenever the `tips` array reference
-  changes (same render-time-adjustment pattern as `InputForm`'s upload state, not an effect) so a
-  fresh roast never carries over which boxes were ticked on the last one.
-- `src/lib/personas.js` — frontend mirror of `api/_lib/prompts/personas.js`'s registry
-  (`{ value, name, tagline }` per persona, kept in sync manually rather than cross-imported across the
-  frontend/backend boundary — same pattern `InputForm.jsx`'s `models` array uses for `MODEL_OPTIONS`).
-  `App.jsx` uses its `personaName()` helper to resolve the id the `complete` event carries into a
-  display string for `RoastCard`.
-- `src/lib/openai.js` — thin fetch wrappers (`getRoast`, `getRateLimitStatus`) against `/api/roast`
-  and `/api/rate-limit-status`. Despite the filename, no OpenAI SDK code runs client-side. `getRoast`
-  takes `(url, type, severity, model, persona, { onRoastChunk })` — `persona` is always sent when
-  provided (unlike `model`, which is dev-only-conditional; see "Model selection" above). It branches
-  on the response's `Content-Type`: a plain JSON response (scrape failure, missing-input, 429,
-  missing-key, LLM-setup, source-unavailable, or persona/type-mismatch error — see "Error handling"
-  above) has its `{ error: {...} }` envelope turned into a thrown `Error` via `errorFromEnvelope()`;
-  an SSE response is read by hand via `res.body.getReader()` (the browser's `EventSource` only
-  supports `GET`, so it can't be used for a `POST`-triggered stream) — each `roast` frame invokes the
-  caller-supplied `onRoastChunk(text)`, an `error` frame throws the same envelope-derived `Error`
-  (ending the stream), and the `complete` frame's data becomes the resolved return value. Every
-  thrown error carries `.message`, `.code`, `.retryable`, and `.rateLimit` — `App.jsx`'s
-  `describeError()` (see above) reads all four.
+- `src/main.jsx` wraps `<App>` in a `<BrowserRouter>`. `src/App.jsx` is now just the route table —
+  three routes (`/`, `/history`, `/r/:slug`), all nested under one `<Route element={<Layout />}>` so
+  they share one header/footer shell with no other nested layouts. `vercel.json`'s rewrites list a
+  catch-all (`/(.*) → /index.html`) after the existing `/api/(.*)` one, so a direct hit on `/history`
+  or `/r/:slug` in production is served the SPA shell instead of 404ing — Vercel only falls through to
+  a rewrite when no matching static file exists, so this doesn't shadow real asset requests.
+- `src/routes/Layout.jsx` owns the state every route needs — `session` (a plain `useState` fed by a
+  `supabase.auth.onAuthStateChange` subscription, see "Auth & persistence" above; no auth state
+  library) and `signInOpen` (the header's sign-in dropdown) — and renders the header (brand, nav,
+  auth) and footer around a React Router `<Outlet context={{ session, signIn, signOut, openSignIn }}>`.
+  Every route reads this via `useOutletContext()` rather than prop-drilling. Deliberately *not* where
+  roaster-specific state lives — see `Roaster.jsx` below for why. Nav is two `<NavLink>`s (`roast` /
+  `history`) whose `isActive` styling comes from the current path, not app state. The sign-in dropdown
+  (`signInOpen`) closes itself via the same "adjust state during render" pattern used elsewhere in
+  this codebase (compare against a `prevSession` state var, not a `useEffect`, when `session` flips
+  from falsy to truthy — see the file's own comment) plus a real outside-click/`Escape` listener pair
+  (added/removed in a `useEffect` gated on `signInOpen`, this one legitimately needs to be an effect
+  since it subscribes to `document`, an external system). When `isSupabaseConfigured` is false (see
+  "Auth & persistence" above), the whole nav/auth block is replaced by the original static `no login`
+  tag — there's nothing to route or sign into differently.
+- `src/routes/Roaster.jsx` (route `/`) is what `src/App.jsx` used to be minus the header/footer: owns
+  `url`, `type`, `severity`, `persona`, `model`, `result`, `loading`, `error`, `rateLimitStatus`,
+  `resetKey`. Deliberately kept local to this route rather than lifted into `Layout.jsx` — per the
+  v3 handoff, "roaster form state... does not persist" across navigation, and a route component's
+  local state resets for free on unmount/remount, which is what actually happens when you navigate to
+  `/history` and back. `status` (`"idle" | "streaming" | "error" | "complete"`) is derived, not
+  stored, straight from `loading`/`error`/`result`. `describeError(err, { type })` turns a thrown
+  error into the `{ code, message, detail, retryable }` shape the Output error state renders — `code`
+  is what lets `RoastCard` tell `SIGN_IN_REQUIRED` (an invitation, not a failure) apart from every
+  other error; `detail` is synthesized from real data only, never fabricated (a `RATE_LIMITED` error
+  gets a real countdown from `err.rateLimit.reset`, a scrape-family error names the source type
+  checked, never the raw submitted text). `instagramOpen = instagramEnabled && signedIn` is the single
+  source of truth this route uses for "is Instagram actually usable right now" — both a mid-session
+  kill-switch flip and a sign-out fall back the selected type to `github` via the same effect.
+- `src/components/InputForm.jsx` — source row, input row, persona row, and (as of v3) its own
+  separate severity row; no longer bundles severity into a "voice" row with persona (see the v3
+  handoff's own reasoning: two decisions that used to share one gutter label now each get their own).
+  Source and persona cells share one visual language (`.source-card`/`.persona-cell` in
+  `src/index.css` share most rules via a combined selector) — 4-up and 3-up grids of the same cell
+  shape, no index numbers (v3 dropped them as decorative). Every source is always rendered — v3's
+  explicit rule is "never hide a locked source, the lock is the pitch" — with per-cell `sourceState()`
+  computing `"open" | "locked" | "disabled"` from `instagramEnabled` (the kill switch, prop) and
+  `signedIn` (prop); the kill switch outranks the lock, so a signed-in user sees `off` too if the
+  scraper itself is down. Clicking a non-open cell doesn't select it — it sets local `prompt` state
+  (`"locked" | "disabled" | null`) instead, which renders an inline row under the source grid: the
+  "locked" variant gets the invitation marker (outlined square, bullet) plus direct `onSignIn(provider)`
+  buttons; "disabled" gets a plain dash marker and no buttons — see "Auth & persistence" above for why
+  this can never read as an `ERROR` row. The prompt closes on its own `close` button, on selecting a
+  different (open) source, and when `signedIn` flips true (same render-time-adjustment pattern as the
+  upload state below, comparing a `prevSignedIn` var). The upload UI (`linkedin`/`resume`) is
+  unchanged from v2: click-to-browse and real HTML5 drag-and-drop both funnel through one shared
+  `processFile(file)` (`extractPdfText()`/`pdfjs-dist` for a PDF, `file.text()` for `.txt`); local
+  state (`fileInfo`, `uploadStatus`, `uploadError`, `dragging`) resets when `type` changes via the
+  render-time-adjustment pattern (a `prevType` comparison, not a `useEffect` — React's own lint rule
+  flags a synchronous `setState` inside an effect body as an avoidable extra render pass). No longer
+  renders its own submit button — that's `Roaster.jsx` — but still owns `Cmd/Ctrl+Enter` via an
+  `onSubmit` prop. The dev-only model picker (`MODEL_OPTIONS` keys in `api/roast.js`) is unchanged,
+  appended as one more gutter row only when `import.meta.env.DEV`.
+- `src/components/RoastCard.jsx` — Output states: idle / streaming / error / **invitation** (new in
+  v3) / complete, exactly one at a time, driven by `status` and `error` props. Streaming shows a
+  single stage label derived from real stream lifecycle (`"reading profile…"` before any text, then
+  `"printing…"`) — v3 also dropped the live character count and its spacer rule that v2 had alongside
+  it. The invitation state fires when `error.code === "SIGN_IN_REQUIRED"` — a session expiring
+  mid-flow is the only realistic way to reach it, since `InputForm.jsx`'s locked-cell gating already
+  prevents submitting Instagram while signed out — and renders the same outlined-marker language as
+  `InputForm.jsx`'s locked-source prompt (in fact reuses its `.source-prompt-provider` button class)
+  with direct `onSignIn(provider)` buttons instead of a retry. The completed-roast meta row collapsed
+  from v2's 4-cell grid to one line (`type · personaName · severity`, plus `· saved` when signed in) —
+  `RoastCard` no longer needs a `modelUsed`-only concept there; that still only shows in the Roast
+  label itself, dev-only. Tip checklist, share, save-as-image, and "roast another" are unchanged from
+  v2.
+- `src/routes/History.jsx` (route `/history`) — signed-in only, but the route itself is reachable by
+  anyone (a shared `/history` link must never redirect or 404 — see the v3 handoff). Signed out: an
+  invitation-marker locked panel with its own two sign-in buttons (`signIn` from the outlet context).
+  Signed in: fetches `getHistory(accessToken)` on mount and on every token change (same
+  render-time-adjustment pattern for resetting `loading`/`error` before the fetch, to keep the actual
+  data-fetching `useEffect` free of synchronous `setState` calls at its top — see the file's own
+  comment) — three states once loaded: a real error (network/auth failure distinct from "signed out"),
+  an empty state (`Saved 0`, its own honest copy — "nothing here yet," not a blank section) and the
+  populated list (`Saved <n>`, paginated 25 at a time via a `cursor` query param, `load more` fetches
+  the next page). Rows show `type`/`identifier`/`persona`/`severity`/`created_at` from
+  `api/history.js` — `identifier` renders `—` for `linkedin`/`resume` rows, which have none (see
+  "Auth & persistence" above: raw pasted/PDF text is never persisted). Rows don't link anywhere yet —
+  there's no real `/r/:slug` behind them until the sharing task ships real slugs.
+- `src/routes/SharedRoast.jsx` (route `/r/:slug`) — shell only, per this task's explicit scope (no
+  slug generation, no visibility logic, no sharing flow). Reads `:slug` via `useParams()` but has
+  nothing to fetch it against yet, so it renders an honest "not shareable yet" invitation row instead
+  of the design's sample roast content, plus the same growth-loop CTA (`roast me instead →`, `3 free a
+  day · no account needed`) the finished page will keep once real roasts land here.
+- `src/lib/personas.js` — unchanged: frontend mirror of `api/_lib/prompts/personas.js`'s registry.
+- `src/lib/openai.js` — `getRoast`/`getRateLimitStatus` unchanged (still take an optional
+  `accessToken` that becomes an `Authorization: Bearer` header via the shared `authHeaders()` helper).
+  New: `getHistory(accessToken, cursor)` against `GET /api/history` — `cursor`, when given, is the
+  previous page's `nextCursor` (an ISO `created_at` timestamp) from `api/history.js`. Throws the same
+  envelope-derived `Error` shape as `getRoast` on a non-2xx response.
 
-**Styling — a real convention shift, not an incremental extension.** The old card-based design used
-Tailwind utility classes for layout plus inline `style={{}}` objects for color, referencing CSS custom
-properties. The redesign's own handoff README is explicit that the implementer should "write ordinary
-classes and ordinary media queries" — dozens of `nth-child`/`:empty`/explicit-grid-placement rules
-across four breakpoints are what the design actually needs, and are unreadable as Tailwind arbitrary-
-variant chains. So the redesigned surface is now **plain CSS classes with real `@media` queries, all
-in `src/index.css`** (still the one global stylesheet — no CSS-in-JS, no second Tailwind config,
-Tailwind stays for small incidental utilities like the visually-hidden-checkbox technique). Class names
-follow the handoff's own `data-r="x"` → `.x` naming crib verbatim (`.row`, `.source-card`,
-`.stack-cell`, `.voice`, `.submit`, `.fix-row`, etc.) so the CSS and the original design doc read
-side by side. Colors are still CSS custom properties, extended (not replaced) in `:root`: `--ground`
-through `--ground-5`, `--accent`/`--accent-dk`, `--ink` through `--ink-4`, `--rule`/`--rule-2` (the
-old `--color-*` set was fully superseded and removed — confirmed via a repo-wide grep that nothing
-still referenced it before deleting). Do **not** hardcode a new hex value inline; add or reuse a
-token instead. The one deliberate exception is `RoastCard.jsx`'s `handleSaveAsImage()`, which passes
-a literal hex (`#0a0a0a`, matching `--ground-2`) to `html2canvas`'s `backgroundColor` option — that
-value becomes a canvas `fillStyle`, which does not resolve CSS custom properties, so it can't
-reference a token and must be kept in sync by hand. Breakpoints are 1180px (type scales down only),
-900px (multi-column layouts collapse to 2-up or stack), 600px (the gutter grid itself collapses —
-every `.row`'s left label becomes a full-width row above its content instead of a column beside it),
-and 380px (a handful of small corrections). See the handoff's own README (not part of this repo) for
-the full rationale per breakpoint if tuning any of this further.
+**Styling.** Same convention as the v2 redesign: plain CSS classes with real `@media` queries, all in
+`src/index.css` (the one global stylesheet — no CSS-in-JS, no second Tailwind config; Tailwind stays
+for small incidental utilities like the visually-hidden-checkbox technique). Class names still follow
+the handoff's own `data-r="x"` → `.x` naming crib. Colors are CSS custom properties in `:root` —
+`--ground` through `--ground-5`, `--accent`/`--accent-dk`, `--ink` through `--ink-4`, `--rule`/
+`--rule-2` — unchanged token values from v2 to v3 (confirmed against the v3 handoff's own "Tokens
+(unchanged)" note). Do **not** hardcode a new hex value inline; add or reuse a token instead. The one
+deliberate exception is `RoastCard.jsx`'s `handleSaveAsImage()`, which passes a literal hex
+(`#0a0a0a`, matching `--ground-2`) to `html2canvas`'s `backgroundColor` option — that value becomes a
+canvas `fillStyle`, which doesn't resolve CSS custom properties, so it can't reference a token and
+must be kept in sync by hand. Breakpoints are still 1180 / 900 / 600 / 380px with the same character
+per level (type-only / columns collapse / gutter collapses and the header stacks to three bands /
+small corrections) — see the v3 handoff's own README (not part of this repo) for the exact values if
+tuning further. The `html, body, #root { zoom: 97% }` rule from the v2/v3 handoffs is **not**
+reproduced as written: applying the same `zoom` declaration to three nested ancestors compounds
+multiplicatively (0.97³ ≈ 91.27%, confirmed by direct measurement — see `WORK_LOG.md`'s 2026-08-23
+entry), so it's consolidated onto `#root` alone at that already-compounded value — same visual
+result, honest CSS. Elements the v3 redesign removed outright (and that no longer have CSS or markup
+anywhere in this repo): the hero's "what it reads" side panel, the "how it works" 3-step strip, index
+numbers on source/persona cells, the streaming character counter and its spacer rule, the rate-limit
+tick meter, and the `cmd + enter` hint.
 
 ### Deployment
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining

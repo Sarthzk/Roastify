@@ -832,3 +832,128 @@ documentation. Net deletion.
   a real error, never a silent guess), scraped data cached 24h and not persisted beyond
   that, and `INSTAGRAM_ENABLED` (Section 10) as the fast, no-deploy removal path if the
   calculus changes. Task item marked resolved.
+
+## 14. Supabase auth + Postgres persistence (2026-09-12)
+
+Goal: the foundation for chat and public share pages later — schema and persistence,
+not those features themselves. Anonymous use must keep working with no login wall.
+
+- [x] `@supabase/supabase-js` added. `src/lib/supabaseClient.js` (browser, anon key) and
+  `api/_lib/supabaseAdmin.js` (server, service role key) both degrade to
+  unconfigured/`null` when the relevant env vars are absent — the app boots and runs
+  fully anonymous-only rather than crashing, verified by building with none of the three
+  Supabase vars set.
+- [x] `api/_lib/auth.js`'s `getAuthenticatedUser(req)` verifies the `Authorization:
+  Bearer` JWT against Supabase Auth (`admin.auth.getUser(token)`) and derives `{ id,
+  email }` — the server never trusts a client-sent user id. Real (not mocked-Supabase)
+  test coverage in `api/_lib/auth.test.js`: valid token, invalid/expired token, absent
+  header, non-Bearer header, unconfigured Supabase, and a rejected Auth API call — all
+  via a mocked `supabaseAdmin.js`, no live calls.
+- [x] `supabase/migrations/20260912000000_roasts_and_reports.sql` — real SQL, not an
+  ORM. `roasts` (`user_id` nullable — anonymous roasts are stored for analytics, just
+  unattributed; `visibility`/`slug` added now, nullable and unused, so the future
+  share-page feature is additive) and `reports` (schema only, for later moderation). RLS
+  enabled on both from the start; `roasts` gets real read/delete-own policies, no
+  INSERT policy on either table for anon/authenticated since every write is
+  server-side via the service role key. No new profiles/scrape-cache table — the
+  existing Redis scrape cache already covers that.
+- [x] Rate limiting re-keyed for tiers (`api/_lib/rateLimit.js`): `createRatelimit(tier)`
+  + `getRateLimitKey(user, ip)`, `RATE_LIMIT_TIERS` (`anonymous: 3/day`,
+  `authenticated: 15/day`) replacing the old flat 5/hour. Keyed by user id when signed
+  in, IP when not. Dev bypass and fail-open behavior both preserved unchanged.
+  `api/rate-limit-status.js` now also verifies the caller's JWT and reports
+  `signedIn`/`tier` so the frontend shows the right limit before the user ever submits.
+- [x] Instagram gated behind sign-in, server-side (`SIGN_IN_REQUIRED`, 401) — independent
+  of the existing `INSTAGRAM_ENABLED` kill switch (both are checked, either alone
+  rejects the request). `api/rate-limit-status.js`'s `signedIn` field lets the UI tell
+  the two "Instagram unavailable" reasons apart, per the task's requirement.
+  `InputForm.jsx` keeps the Instagram card visible-but-locked for anonymous users
+  (dashed "sign in" tag, disabled, tooltip) rather than hiding it.
+- [x] Completed roasts persisted via `api/_lib/persistRoast.js` (service role key,
+  fail-open on any write error) right before the `complete` SSE event — `roast`/`tips`
+  only, never the raw scraped/pasted profile text (no PII, matching the existing
+  `logFailure()` policy).
+- [x] Frontend: `App.jsx` owns `session` state (`useState` + `onAuthStateChange`, no
+  state library), header renders sign-in (GitHub/Google)/sign-out controls matching the
+  existing monospace-caps/hard-rule/zero-radius design language, or falls back to the
+  original static "no login" tag when Supabase isn't configured. `getRoast`/
+  `getRateLimitStatus` attach the session's JWT as a Bearer header when present.
+- [x] Verification: 115/115 tests pass (95 previous + 20 new — `api/_lib/auth.test.js`,
+  `api/_lib/rateLimit.test.js`, plus new describe blocks in `api/roast.test.js` and
+  `api/rate-limit-status.test.js` for the sign-in gate and tier-based keying), `npm run
+  lint`/`npm test`/`npm run build` all clean. Confirmed `SUPABASE_SERVICE_ROLE_KEY` is
+  absent from the built client bundle by grepping `dist/` for both the env var name and
+  a fake secret value injected only at build time. Manually clicked through the running
+  app (both local dev servers): anonymous UI (locked Instagram card, "sign in ·
+  github"/"sign in · google" header buttons, correct copy), a full anonymous GitHub
+  roast end-to-end, an anonymous Instagram request correctly rejected with
+  `SIGN_IN_REQUIRED`, and the GitHub OAuth button correctly redirecting to GitHub's real
+  authorize screen with the right `client_id`/`redirect_uri` — did not complete the
+  actual OAuth login (needs the user's real GitHub/Google credentials). The one thing
+  this surfaced: the `roasts` table doesn't exist on the connected Supabase project yet
+  (the migration hasn't been applied there) — `persistRoast` failed open exactly as
+  designed (the roast still completed for the user), logging "Could not find the table
+  'public.roasts' in the schema cache." **Applying the migration is a follow-up step for
+  the user**, not something done in this session (needs their Supabase CLI login/DB
+  password, or pasting the SQL into their dashboard's SQL editor).
+
+## 15. v3 redesign: routing, header auth, tier-aware source states, history page (2026-09-13)
+
+Goal: implement the v3 Claude Design handoff — routing, header auth UI wired to the
+session state already built in Section 14, tier/locked source states driven by real
+`/api/rate-limit-status` data, and the `/history` page (signed-in list + signed-out
+locked panel). Not this task: `/r/:slug` slug generation, visibility, or the actual
+sharing flow — route and shell only.
+
+- [x] Read the authoritative bundle via DesignSync — three handoff generations were
+  present (`design_handoff_roastify_redesign/` v1, `_v2/`, `_v3/`); v3's own README
+  declared v2 superseded ("do not implement from it"), so `design_handoff_roastify_v2/
+  README.md` was deleted from the bundle to prevent a future session reading it by
+  mistake. v1 had no README to begin with.
+- [x] `react-router-dom` added. Three routes under one shared `<Layout>` (header +
+  footer): `/` (`Roaster.jsx`), `/history` (`History.jsx`), `/r/:slug`
+  (`SharedRoast.jsx`, shell only). `vercel.json` got a catch-all SPA rewrite. Session
+  state moved from `App.jsx` into `Layout.jsx`; roaster-specific state moved into
+  `Roaster.jsx` and stayed local to it (resets on navigation for free, matching the
+  handoff's "roaster form state does not persist" rule) rather than being lifted higher.
+- [x] Header: real nav (active-state from the route) and real auth (sign-in dropdown
+  panel with GitHub/Google, closes on selection/outside-click/Escape/sign-in; signed-in
+  avatar + handle + sign out). Old static "no login / free" tags removed, replaced by
+  the sign-in UI — or the original "no login" tag only when Supabase isn't configured.
+- [x] Source cells (github/linkedin/resume/instagram) are never hidden now — a real
+  behavior change from Section 14's implementation, which hid Instagram outright when
+  the kill switch was off. Per-cell state (`open`/`locked`/`disabled`) computed from
+  real `instagramEnabled`/`signedIn` data; kill switch outranks the sign-in lock.
+  Clicking a non-open cell opens an inline prompt (invitation marker + direct
+  GitHub/Google buttons for "locked"; a plain note for "disabled") instead of selecting
+  it. Two copy strings from the handoff were rewritten before shipping since they made
+  claims not true of this app's real architecture (see WORK_LOG.md for the exact
+  before/after) — everything else implemented verbatim.
+- [x] Severity split into its own gutter row (previously shared "Voice" with persona);
+  lost its sublabels per the `.dc.html`'s own v3 template (raw value text only). Persona
+  moved to a 3-across grid sharing the source grid's cell shape. Index numbers, the hero
+  side panel, the "how it works" strip, the streaming char counter + spacer, and the
+  rate-limit tick meter are all removed, matching the handoff's own diff list.
+- [x] New `SIGN_IN_REQUIRED` "invitation" Output state in `RoastCard.jsx` — visually
+  distinct from `Error` (outlined marker vs. filled `!` square, no `ERROR` label),
+  matching the handoff's explicit "a tier boundary must never read as a failure" rule.
+  Only reachable if a session expires mid-flow; the locked source cell already prevents
+  submitting Instagram while signed out.
+- [x] `GET /api/history` — the only API surface touched, per instruction. Rejects a
+  missing/invalid JWT with `SIGN_IN_REQUIRED` (401). Otherwise queries through a new
+  per-request Supabase client scoped to the caller's own JWT (`api/_lib/supabaseUser.js`,
+  anon key + `Authorization` header) rather than the service-role admin client, so
+  Postgres RLS — not application code — is what actually restricts results to the
+  caller's own rows. Paginated 25 at a time via `?cursor=` (an ISO `created_at`
+  timestamp). `History.jsx` renders three states beyond signed-out-locked: loading,
+  real error, empty (`Saved 0`, distinct copy), and populated with a `load more` row.
+- [x] Consolidated the `html, body, #root { zoom: 97% }` compounding-zoom rule (see
+  Section 13's finding — actual effective scale ≈91.27%, not 97%) onto `#root` alone at
+  the honest already-compounded value, since this session's CSS rewrite touched that
+  rule anyway. Visual result unchanged; the three-nested-ancestor form is gone.
+- [x] Verification: 120/120 tests (5 new in `api/history.test.js`), lint/build clean,
+  confirmed `SUPABASE_SERVICE_ROLE_KEY` still absent from the built bundle. Manually
+  clicked through every route, both auth states, the locked/disabled source prompts, the
+  header sign-in panel, a full anonymous GitHub roast end-to-end, and the ≤600px mobile
+  breakpoint (via an injected same-origin iframe — `resize_window` didn't actually
+  resize the viewport in this environment). No console errors.
