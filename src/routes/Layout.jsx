@@ -11,6 +11,7 @@ export default function Layout() {
   const [session, setSession] = useState(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const authRef = useRef(null);
+  const triggerRef = useRef(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -32,15 +33,44 @@ export default function Layout() {
     if (session) setSignInOpen(false);
   }
 
-  // Outside click / Escape close the panel, per the design.
+  // Outside click / Escape close the panel, per the design. Escape also restores focus
+  // to the trigger button — an outside click doesn't, since focus is already moving to
+  // whatever the user just clicked, and re-stealing it there would be the surprising one.
+  // The Tab/Shift+Tab branch traps focus within the panel while it's open: without it,
+  // tabbing past the last provider button would escape into the page's main content
+  // instead of wrapping back to "close" — the panel is the only thing a keyboard user
+  // should be able to reach while it's the visible/actionable thing on screen.
   useEffect(() => {
     if (!signInOpen) return;
+
+    function getFocusable() {
+      return authRef.current ? Array.from(authRef.current.querySelectorAll("button")) : [];
+    }
+
     function handlePointerDown(e) {
       if (authRef.current && !authRef.current.contains(e.target)) setSignInOpen(false);
     }
+
     function handleKeyDown(e) {
-      if (e.key === "Escape") setSignInOpen(false);
+      if (e.key === "Escape") {
+        setSignInOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -48,6 +78,11 @@ export default function Layout() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [signInOpen]);
+
+  function closeSignIn() {
+    setSignInOpen(false);
+    triggerRef.current?.focus();
+  }
 
   async function signIn(provider) {
     if (!supabase) return;
@@ -102,6 +137,7 @@ export default function Layout() {
               </>
             ) : (
               <button
+                ref={triggerRef}
                 type="button"
                 className={`auth-trigger${signInOpen ? " is-open" : ""}`}
                 onClick={() => setSignInOpen((open) => !open)}
@@ -115,7 +151,7 @@ export default function Layout() {
               <div className="signin-panel">
                 <div className="signin-panel-head">
                   <span className="signin-panel-title">sign in</span>
-                  <button type="button" className="signin-panel-close" onClick={() => setSignInOpen(false)}>
+                  <button type="button" className="signin-panel-close" onClick={closeSignIn}>
                     close
                   </button>
                 </div>

@@ -8,6 +8,98 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Accessibility pass (GYM_TASKS.md Task 6)
+First real accessibility audit of this app. Per the task's own instruction, reused Task
+0's contrast table rather than re-deriving it, and added the pairings Task 0 didn't cover.
+
+**Contrast — full numbers, nothing changed silently:**
+| pairing | ratio |
+|---|---|
+| `--ink` on `--ground` | 14.00:1 (Task 0) |
+| `--ink-row-2` on `--ground` | 9.00:1 (Task 0) |
+| `--ink-row-3` on `--ground` | 6.50:1 (Task 0) |
+| `--ink-2` on `--ground` | 5.50:1 (Task 0) |
+| `--ink-3` on `--ground` | 4.00:1 (Task 0) |
+| `--accent` on `--ground` (active nav, links, `.row-label--accent`) | 11.02:1 |
+| `#000` on `--accent` (every filled amber button — same pair, inverted) | 11.02:1 |
+| `--accent-lt` on `--ground` (plain-link hover) | 13.01:1 |
+| `--accent-dk` on `--ground` (selected sublabels, upgrade link) | 4.60:1 |
+| `--ink-3` on `--ground-4` (struck-through fix text, real pairing — see below) | 3.80:1 |
+
+`--ground` through `--ground-5` are all within a few thousandths of luminance of each
+other (confirmed: `--ink` against the lightest of them, `--ground-3`, is 12.55:1 vs.
+14.00:1 against pure `--ground` — a real but tiny drift), so the `--ground` baseline
+Task 0 already reported stands for all of them; not worth a full second table.
+
+**`--ink-3` at ~4:1 (small text: placeholders, faint labels, struck-through fix text) is
+below WCAG AA's 4.5:1 normal-text threshold** — a real, reportable gap, not fixed here:
+Task 0 already made this exact tradeoff deliberately (traded off against keeping the
+"muted, terminal-ish identity"), documented the reasoning, and the numbers haven't been
+reviewed yet — Task 6's job was to verify and report, not re-litigate a decision that's
+already been made and is waiting on review.
+
+**Two real bugs found and fixed, both load-bearing, neither a design change:**
+- `--ink-4` was declared in `:root` but never actually applied anywhere — the real
+  struck-through fix-text rule uses `--ink-3` (`.fix-row.is-checked .fix-row-text`), on
+  `--ground-4`. Removed the dead token per the code standards' "delete rather than leave
+  unreferenced," fixed the now-stale comment, and reported the *real* pairing above
+  instead of the fictional one Task 0's table had listed for it.
+- `a:hover { color: #f0c832 }` was a hardcoded hex with no token behind it, violating the
+  project's own "no new hardcoded hex, add or reuse a token" rule — tokenized as
+  `--accent-lt` (13.01:1 against `--ground`), same value, no visual change.
+
+**Keyboard navigation & focus states** — Tab/Shift+Tab/Enter/Space through the roaster
+(source/persona/severity cells, submit, fixes checklist) and the sign-in dropdown,
+confirmed via real key presses in a live browser, not read off the CSS:
+- The global `:focus-visible { outline: 2px solid var(--accent) }` rule is real and
+  renders a clearly visible amber ring — confirmed on source cells, persona cells, and
+  after the fix below, the fix-list checkboxes. Not the browser default anywhere.
+- **Real bug**: the fixes checklist's checkbox is a genuine `<input type="checkbox">`
+  made invisible with `opacity: 0` and stacked over a styled decoy box (a legitimate,
+  common technique for real keyboard/screen-reader support) — but `opacity: 0` also
+  wipes out the input's own outline, so a keyboard user tabbing to any fix row got *no*
+  focus indicator at all, not even the browser default. Fixed by painting the ring onto
+  the visible decoy box instead, via `.fix-row-checkbox:has(.fix-row-checkbox-input:focus-visible)`.
+  Confirmed before (nothing visible) and after (clear amber ring) with the same Tab/
+  Shift+Tab sequence in the browser.
+- **Sign-in dropdown had neither a focus trap nor focus restoration.** Tabbing past the
+  last provider button escaped into the rest of the page instead of wrapping back
+  through the panel, and closing it (Escape, or the close button) left focus nowhere —
+  the trigger, close button, and provider buttons all unmount/lose relevance without it.
+  Added both to `Layout.jsx`: a Tab/Shift+Tab handler that wraps within the trigger +
+  panel's own buttons, and explicit focus-restoration to the trigger on Escape and on the
+  close button (deliberately *not* on an outside click — focus is already moving to
+  whatever the user just clicked there, and stealing it back would be the surprising
+  behavior). Confirmed via real keys: 4 Tabs from the trigger cycle back to the trigger
+  without ever reaching page content behind it; Escape closes the panel and moves focus
+  back to the trigger, confirmed via `document.activeElement`.
+
+**Screen reader labels on icon/glyph-only controls**: audited every `<button>` across
+`src/` — none turned out to be icon-only. Every one already has real visible text as its
+accessible name (arrows/glyphs are always alongside text, e.g. "continue with github →",
+never the sole content); the fixes checklist's checkbox is wrapped in a `<label>` with
+the actual tip text, so a screen reader announces the real tip, not "checkbox." No gap
+to fix here — a good outcome, verified rather than assumed.
+
+**`prefers-reduced-motion`**: confirmed by reading the actual selectors, not just that a
+block with this name exists — `.caret` (`animation: r-blink 1s step-end infinite`, the
+streaming caret) and `.progress-bar` (`animation: r-load 1.1s linear infinite`) are both
+named explicitly inside `@media (prefers-reduced-motion: reduce)` and both get
+`animation: none`. **Could not verify this live**: this environment has no way to toggle
+the OS-level "reduce motion" setting or Chrome's own media-feature emulation through the
+tools available here, so this is a code-level confirmation, not a rendered one — flagging
+that gap plainly rather than describing a check I didn't actually perform.
+
+**One item I could not cleanly verify live**: `.hist-row-delete` (the per-roast delete
+button added in Task 2) uses the same plain, unmodified `<button>` pattern already
+confirmed elsewhere in this pass — no opacity/visibility tricks like the checkbox had —
+so there's no code reason it would behave differently. A live Tab-key confirmation
+specifically on that button hit a tool hiccup (focus stopped advancing on that page
+after several prior interactions) that didn't reproduce elsewhere in this same session;
+noting the gap rather than asserting a clean pass I didn't actually get.
+
+Lint, tests (131), and build clean throughout.
+
 ### og:image (GYM_TASKS.md Task 5)
 `og:image`/`twitter:image` were removed previously because they pointed at a file that
 never existed — see ROASTIFY_TASKS.md. `sharp` (confirmed installable, added as a
