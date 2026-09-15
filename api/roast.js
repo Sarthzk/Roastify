@@ -9,7 +9,7 @@ import { fenceUntrustedContent } from "./_lib/prompts/fence.js";
 import { isInstagramEnabled } from "./_lib/config.js";
 import { getAuthenticatedUser } from "./_lib/auth.js";
 import { persistRoast } from "./_lib/persistRoast.js";
-import { captureError } from "./_lib/sentry.js";
+import { reportError } from "./_lib/sentry.js";
 import { extractGithubUsername, scrapeGithub } from "./_lib/scrapers/github.js";
 import { extractInstagramUsername, scrapeInstagram } from "./_lib/scrapers/instagram.js";
 import { extractStreamingRoastText, sendSseEvent } from "./_lib/streaming.js";
@@ -108,8 +108,11 @@ function logFailure(err, { type, model, persona, buffer } = {}) {
   console.error(JSON.stringify(payload));
   // Tags only — code/type/model/persona, never `buffer`/`bufferPreview` (the one field
   // above that can carry real model output, and by extension scraped/pasted profile
-  // content) and never anything from `payload` wholesale.
-  captureError(err, { code, type, model, persona });
+  // content) and never anything from `payload` wholesale. reportError() itself decides
+  // whether this code is worth a Sentry issue (see RoastError.reportToSentry) — expected
+  // user-input failures (a typo'd username, a private profile, MISSING_INPUT, ...) stay
+  // in the console log above only.
+  reportError(err, { code, type, model, persona });
 }
 
 export default async function handler(req, res) {
@@ -217,7 +220,7 @@ export default async function handler(req, res) {
       }
     } catch (rateLimitError) {
       console.error("Rate limit init failed:", rateLimitError.message);
-      captureError(rateLimitError, { code: "RATE_LIMIT_INIT_FAILURE" });
+      reportError(rateLimitError, { code: "RATE_LIMIT_INIT_FAILURE" });
       // Fail open — continue without rate limiting if Upstash is unavailable
     }
   }

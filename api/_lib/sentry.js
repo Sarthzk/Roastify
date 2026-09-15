@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { shouldReportToSentry } from "./errors.js";
 
 // SENTRY_DSN is not set yet (no project has been created) — every call here must be a
 // silent no-op until it is, never a crash or a warning. isSentryConfigured() gates
@@ -13,7 +14,14 @@ export function isSentryConfigured() {
 let initialized = false;
 function ensureInitialized() {
   if (initialized) return;
-  Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: 0 });
+  // Same NODE_ENV convention as resolveProductionSafeModelOption/the rate-limit dev
+  // bypass elsewhere in api/ — local dev sets NODE_ENV=development, so this is what
+  // separates local noise from production issues in the Sentry dashboard.
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 0,
+    environment: process.env.NODE_ENV === "development" ? "development" : "production",
+  });
   initialized = true;
 }
 
@@ -29,4 +37,14 @@ export function captureError(err, tags = {}) {
   if (!isSentryConfigured()) return;
   ensureInitialized();
   Sentry.captureException(err, { tags });
+}
+
+// The entry point application code should actually call: reports err via captureError()
+// above, but only when shouldReportToSentry(err) says it indicates a problem with our
+// system rather than expected user input/behavior — see api/_lib/errors.js. Expected
+// failures still get their existing structured console logging; this only gates the
+// Sentry issue.
+export function reportError(err, tags = {}) {
+  if (!shouldReportToSentry(err)) return;
+  captureError(err, tags);
 }

@@ -37,10 +37,14 @@ describe("getAuthenticatedUser", () => {
 
   it("returns null for an invalid/expired token, without throwing", async () => {
     getUserMock.mockResolvedValue({ data: { user: null }, error: new Error("invalid JWT") });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const user = await getAuthenticatedUser(reqWithAuth("Bearer garbage-token"));
-
-    expect(user).toBeNull();
+    try {
+      const user = await getAuthenticatedUser(reqWithAuth("Bearer garbage-token"));
+      expect(user).toBeNull();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("returns null when the Authorization header is absent, without calling Supabase", async () => {

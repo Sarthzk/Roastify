@@ -1,5 +1,5 @@
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./supabaseAdmin.js";
-import { captureError } from "./sentry.js";
+import { reportError } from "./sentry.js";
 
 // Pulls the raw JWT out of `Authorization: Bearer <jwt>`, or null for a missing/
 // malformed header or an empty token. Shared by getAuthenticatedUser() below and by
@@ -26,11 +26,21 @@ export async function getAuthenticatedUser(req) {
 
   try {
     const { data, error } = await getSupabaseAdminClient().auth.getUser(token);
-    if (error || !data?.user) return null;
+    if (error || !data?.user) {
+      // A token was actually sent and Supabase rejected it (expired, malformed, wrong
+      // project) — distinct from the no-token-at-all case above, which is just an
+      // anonymous request and never reaches here. Worth a Sentry issue: at volume this is
+      // the signal for a real problem (key rotation, clock skew, an outage) rather than
+      // any single caller's stale session.
+      const verificationError = new Error(error?.message || "Supabase returned no user for this token");
+      console.error("JWT verification failed:", verificationError.message);
+      reportError(verificationError, { code: "JWT_VERIFICATION_FAILURE" });
+      return null;
+    }
     return { id: data.user.id, email: data.user.email };
   } catch (err) {
     console.error("JWT verification failed:", err.message);
-    captureError(err, { code: "JWT_VERIFICATION_FAILURE" });
+    reportError(err, { code: "JWT_VERIFICATION_FAILURE" });
     return null;
   }
 }

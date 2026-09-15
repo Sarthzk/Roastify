@@ -677,11 +677,28 @@ selection" above) has to fit inside that window, which is why the Apify poll bud
 ### Error tracking
 `api/_lib/sentry.js` wraps `@sentry/node`, gated entirely on `SENTRY_DSN` — `isSentryConfigured()`
 and `captureError(err, tags)` both no-op (no network call, no client built) when it's absent, which it
-is by default (no Sentry project exists yet). Wired alongside every existing `console.error` under
-`api/` (never replacing one), tagged with metadata only (`code`/`type`/`model`/`persona`) — never
-scraped profile content, resume text, roast text, or an email address; see "Error handling" above for
-`logFailure()`'s own Sentry call and why it deliberately never forwards `bufferPreview`. See the
-README's "Error tracking" section for how to actually turn this on.
+is by default (no Sentry project exists yet). `Sentry.init()` also sets an `environment` tag
+(`development` when `NODE_ENV=development`, `production` otherwise — same convention as
+`resolveProductionSafeModelOption`/the rate-limit dev bypass) so local runs are distinguishable from
+production in the dashboard. Wired alongside every existing `console.error` under `api/` (never
+replacing one), tagged with metadata only (`code`/`type`/`model`/`persona`) — never scraped profile
+content, resume text, roast text, or an email address; see "Error handling" above for `logFailure()`'s
+own Sentry call and why it deliberately never forwards `bufferPreview`.
+
+**Not every failure is a Sentry issue.** A mistyped GitHub username or a rate-limited request is
+expected user behavior, not a bug — reporting those at volume would bury real failures. `captureError()`
+is the low-level always-report primitive (still what `sentry.test.js` exercises directly); application
+code calls `reportError(err, tags)` instead, which only forwards to `captureError()` when
+`shouldReportToSentry(err)` (`api/_lib/errors.js`) says so. This is driven off a property on the error
+itself rather than a list of codes checked at each call site: `ERROR_CODE_META` in `errors.js` declares
+`reportToSentry` per error code, `RoastError`'s constructor reads it into `this.reportToSentry` (and
+throws immediately if a code has no entry — a new failure mode can't go unclassified), and
+`shouldReportToSentry()` just reads that property, defaulting to `true` for anything that isn't a
+`RoastError` (an actual bug, or an Apify/Redis/Upstash/JWT failure — those are constructed as plain
+`Error`s at their call sites specifically because they should always report). `api/_lib/auth.js`'s
+`getAuthenticatedUser()` reports a real JWT verification failure (a token was sent and Supabase
+rejected it) but not the plain absent-token case, which is just an anonymous request. See the README's
+"Error tracking" section for how to actually turn this on, and for the do/don't-report code list.
 
 ### Model eval harness
 `scripts/eval-models.mjs` (not part of the deployed app — run manually, never in CI) compares the

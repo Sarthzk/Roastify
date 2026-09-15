@@ -144,6 +144,19 @@ codes, types, model names, and stack traces are ever sent — never scraped prof
 content, resume text, roast text, or email addresses (see the no-PII comment in
 `api/_lib/sentry.js` and everywhere it's called).
 
+Not every failure is a Sentry issue: expected user input/behavior (a typo'd username, a
+private profile, a missed rate limit, a missing sign-in) stays in the structured console
+log only — sending those would bury real failures under noise. `api/_lib/errors.js`
+declares this per error code (`ERROR_CODE_META`'s `reportToSentry`), and
+`reportError()` (`api/_lib/sentry.js`, what every call site actually calls — `captureError()`
+is the underlying always-report primitive it wraps) reads it off the thrown `RoastError`
+before deciding to report; a `RoastError` constructed with a code that hasn't declared one
+throws immediately, so a new failure mode can't slip through unclassified. Non-`RoastError`
+errors (an actual bug, an Apify/Redis/Upstash failure, a JWT verification failure) always
+report — see `shouldReportToSentry()`. Every reported error is also tagged with an
+`environment` (`development` when `NODE_ENV=development`, `production` otherwise) so local
+runs don't pollute production issues in the dashboard.
+
 ---
 
 Built with React, Vite, Groq (GPT-OSS 120B), and deployed on Vercel.

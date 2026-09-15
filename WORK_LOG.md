@@ -6,6 +6,59 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-16
+
+### Split Sentry reporting: expected user errors vs. real system problems
+Sentry (wired up in the previous session) turned out to be reporting expected user
+errors as issues — a mistyped GitHub username produced a `RoastError` Sentry issue,
+which isn't a bug. At volume that buries real failures and burns quota, so reporting is
+now driven off a property on the error itself rather than a list of codes checked at each
+call site.
+
+`api/_lib/errors.js` gained `ERROR_CODE_META`, a per-code `{ reportToSentry }` table —
+`ERROR_CODES` is now generated from its keys, so the two can't drift. `RoastError`'s
+constructor reads its own code's entry into `this.reportToSentry` and throws immediately
+if the code has no entry — a new error code is forced to declare which kind it is instead
+of silently defaulting. `shouldReportToSentry(err)` reads that property, defaulting to
+`true` for anything that isn't a `RoastError` (an uncaught bug, or a plain `Error` from
+Apify/Redis/Upstash/JWT-verification code, all of which are constructed that way
+specifically so they always report).
+
+`api/_lib/sentry.js` gained `reportError(err, tags)` — the function every application call
+site now calls instead of `captureError()` directly; `captureError()` itself becomes the
+low-level always-report primitive `reportError()` wraps (and what `sentry.test.js` still
+exercises directly). Swapped every `captureError` call site under `api/` to `reportError`
+(`roast.js`'s `logFailure`, `history.js`, `account.js`, `auth.js`, `persistRoast.js`,
+`scrapeCache.js`, `apify.js`, `rate-limit-status.js`) — behavior-preserving everywhere
+except `roast.js`'s `logFailure`, which is the one place a `RoastError` of every code
+funnels through, so it's the one place the new gating actually changes what gets sent:
+`SCRAPE_NOT_FOUND`/`SCRAPE_INVALID_INPUT`/`MISSING_INPUT`/`RATE_LIMITED`/
+`SIGN_IN_REQUIRED`/`SOURCE_UNAVAILABLE`/`PERSONA_NOT_ALLOWED_FOR_TYPE`/`ROAST_NOT_FOUND`
+stay console-log-only now; `LLM_*`/`SCRAPE_UPSTREAM_FAILURE`/`SCRAPE_TIMEOUT`/
+`SERVER_MISCONFIGURED`/`INTERNAL_ERROR` still report.
+
+Also fixed a real gap while in there: `api/_lib/auth.js`'s `getAuthenticatedUser()` only
+ever reported a JWT problem when the Supabase call itself threw (network error) — an
+actual rejected/expired token (Supabase responds normally with `error`/no `user`) was
+silently swallowed, never logged or reported at all. Now reports that case too (tagged
+`JWT_VERIFICATION_FAILURE`, same as the throw path), while the plain absent-token case
+(no `Authorization` header — just an anonymous request) still reports nothing, since
+that was never a failure.
+
+`Sentry.init()` now also sets an `environment` tag (`development` when
+`NODE_ENV=development`, `production` otherwise — same convention already used for the
+rate-limit dev bypass and the production-safe model resolver) so local runs are
+distinguishable from production issues in the dashboard.
+
+No new test file — `api/_lib/errors.js` had none before and the classification table is
+exercised indirectly through every existing `RoastError`-constructing test across the
+suite (all of which import codes via `ERROR_CODES`, never a bare string, so a missing
+`ERROR_CODE_META` entry would fail loudly). Updated `auth.test.js`'s "invalid/expired
+token" case to spy on `console.error` (it now logs), matching the pattern the adjacent
+"rejects" test already used. Lint, tests (156), and build clean.
+
+---
+
 ## 2026-09-15
 
 ### Header: account panel + clickable logo

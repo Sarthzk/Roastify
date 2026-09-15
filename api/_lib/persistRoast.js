@@ -1,5 +1,5 @@
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./supabaseAdmin.js";
-import { captureError } from "./sentry.js";
+import { reportError } from "./sentry.js";
 
 // Persists a completed roast via the service role key (bypassing RLS deliberately — this
 // is the only writer roasts ever gets; see the migration's comment on why there's no
@@ -21,10 +21,10 @@ export async function persistRoast({ userId, type, identifier, persona, severity
       .insert({ user_id: userId, type, identifier, persona, severity, model, roast, tips });
     if (error) {
       console.error("Failed to persist roast:", error.message);
-      captureError(error, { code: "PERSIST_ROAST_FAILURE", type });
+      reportError(error, { code: "PERSIST_ROAST_FAILURE", type });
     }
   } catch (err) {
     console.error("Failed to persist roast:", err.message);
-    captureError(err, { code: "PERSIST_ROAST_FAILURE", type });
+    reportError(err, { code: "PERSIST_ROAST_FAILURE", type });
   }
 }
