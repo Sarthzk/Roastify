@@ -957,3 +957,52 @@ sharing flow — route and shell only.
   header sign-in panel, a full anonymous GitHub roast end-to-end, and the ≤600px mobile
   breakpoint (via an injected same-origin iframe — `resize_window` didn't actually
   resize the viewport in this environment). No console errors.
+
+## 16. /history: row contrast + short-list gap fix (2026-09-15)
+
+Goal: apply an updated design handoff for `/history` — the same v3 handoff files, edited
+in place with two reworked areas (row type hierarchy, and a dedicated fix for the
+short-list dead-gap issue). Presentation only; no other route, the history endpoint, or
+auth touched.
+
+- [x] Confirmed both issues against the handoff before changing anything, per
+  instruction: the previous implementation matched the *old* handoff exactly (byte-level
+  comparison of colors against the prior `.dc.html`), so these were genuine design
+  reworks, not implementation bugs.
+- [x] Row type hierarchy inverted: handle/filename is now primary (17px, `--ink`,
+  ellipsis on overflow) instead of the source kind; persona/severity/date moved to two
+  new mid-brightness tokens (`--ink-row-2` `#9a9992`, `--ink-row-3` `#7c7e81`) added to
+  `src/index.css`, extending the token system rather than hardcoding. `--ink-2`/`--ink-3`
+  are now documented gutter-label-only per the handoff, never row content. Severity
+  became a bordered chip (`justify-self: start`).
+- [x] Short-list gap fixed with the handoff's own mechanism: a closing `NEXT`/`EMPTY`
+  panel below the list, `flex: 1` + `min-height: 260px`, inside a flex-column route root
+  (`.history-page`). Closes the gap for one, two, or three roasts; a long list just lets
+  the panel sit at its floor height since there's no leftover space. Count-aware title/
+  body/CTA. Confirmed this only applies to the signed-in Next/Empty row — the signed-out
+  locked panel has no such row and keeps its pre-existing gap, matching the handoff
+  exactly (it doesn't extend the fix to signed-out either; flagged to the user rather
+  than assumed).
+- [x] Two copy strings adapted before shipping (same principle as an earlier session):
+  the handoff's Next/Empty body mentions delete and re-run/open, neither of which exists
+  yet. Kept the accurate first sentence in each case, dropped the rest.
+- [x] Row clicks confirmed (not implemented, per instruction): the handoff routes an
+  entire row to `/r/:slug` on click; still nothing to route to until the sharing task
+  ships real slugs.
+- [x] Verification: 120/120 tests (no test changes needed), lint/build clean. Checked
+  live against the user's own real account: one row, 3+ rows, a 26-row long list, the
+  empty state (via a temporary `window.fetch` intercept for `/api/history`, not synthetic
+  component state), and signed-out (via the real sign-out button — flagged to the user
+  that this logged their actual session out). Mobile checked for header/hero/locked-panel
+  via an injected iframe; the signed-in row's mobile-only rule (severity chip drops its
+  border at ≤600px) was added per spec but not re-verified live, to avoid a second
+  sign-out/sign-in cycle on the real account.
+
+### Also this session: adopted the Git workflow from CLAUDE.md for the first time
+The working tree had ~32 files of uncommitted work (Sections 14 and 15, both already
+verified in their own sessions) sitting on `main` with no `dev` branch yet. Per the new
+Git workflow section, stopped and asked rather than committing it as part of this task;
+user chose to stash it, create `dev` from clean `main`, then pop the stash onto `dev` (the
+only way `/history` could exist to work on). Committed the stashed work as two commits
+matching the existing WORK_LOG entries (auth/persistence, then routing/redesign) before
+starting this task's own new work, and pushed `dev` to origin.

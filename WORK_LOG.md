@@ -6,6 +6,66 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-15
+
+### /history: row contrast + short-list gap, per an updated design handoff
+Full detail in `ROASTIFY_TASKS.md` Section 16; summary here. Presentation-only fix on
+`/history`, driven by a revised Claude Design handoff (the same `design_handoff_roastify_v3/`
+files, edited in place — no new file to diff against, no separate stale `/history` handoff
+to delete this time). Both issues were confirmed against the handoff before touching
+anything, per instruction: the previous implementation matched the *old* handoff exactly;
+the design itself changed, not a bug in what shipped.
+
+**Row type hierarchy.** The handoff explicitly flips which row field is emphasized:
+the row is the page's primary content, so it now reads brighter than the gutter labels
+around it. Handle/filename is now primary (17px, `--ink`, with ellipsis on overflow);
+persona and severity are secondary; source kind and date are tertiary — using two brand
+new colors (`#9a9992`, `#7c7e81`) the handoff introduces specifically for row content,
+distinct from the existing `--ink-2`/`--ink-3` (now documented as gutter-label-only,
+never row content). Added as `--ink-row-2`/`--ink-row-3` in `src/index.css`, extending
+the token system rather than hardcoding — the previous implementation had this backwards
+(kind bright, handle dim) because that's what the *old* handoff specified; confirmed via
+direct byte comparison against the `.dc.html` template, not assumed. Severity also became
+a bordered chip (`justify-self: start`, so it doesn't stretch to fill its grid column).
+
+**Short-list gap.** The handoff adds a closing panel below the list — gutter label `NEXT`
+(or `EMPTY` when there are zero roasts) — that takes `flex: 1` with a `min-height: 260px`
+floor, so the route's own root is a flex column and this panel absorbs whatever space
+the list doesn't use. One, two, or three roasts now leave no dead gap; a long list just
+lets the panel sit at its minimum height, since there's no leftover space for it to grow
+into. Title/body/CTA are count-aware (`Nothing here yet.` / `One roast on the record.` /
+`That is N roasts on the record.`). Verified this is genuinely a *global* app-root
+mechanism at the CSS level, not something added to fake a fix scoped to History: measured
+`flex:1` growing to fill exactly the leftover space in the earlier auth-review session,
+and confirmed here that only `/history`'s Next/Empty row opts into it — the signed-out
+locked panel has no such row and is deliberately left with its pre-existing gap, matching
+the handoff exactly (it doesn't extend this treatment to signed-out either).
+
+Two copy strings from the handoff were adapted before shipping, same principle as an
+earlier session's Instagram-prompt copy fix: the handoff's Next/Empty body text mentions
+"kept until you delete it" and "you can re-run any saved roast with a different voice" —
+neither delete nor re-run/open exists yet (`/r/:slug` has no real slugs behind it until
+the sharing task ships row clicks, explicitly out of scope here). Kept the first,
+accurate sentence in each case; dropped the part promising unbuilt functionality.
+
+Row clicks were confirmed (not implemented, per instruction): the handoff's own
+`.dc.html` wraps the entire row in a button routing to `/r/:slug`, matching the README's
+"`OPEN →` routes to `/r/:slug`". Still nothing to route to — deferred to the sharing task.
+
+Verification: 120/120 tests (no test changes needed — presentation-only), lint/build
+clean. Checked live against the user's own real signed-in account (not synthetic data):
+one row (removed one of two real rows via a temporary DOM edit, not a data change),
+three-plus rows, a 26-row long list (injected temporarily via DOM, same non-destructive
+technique), the empty state (verified through the real fetch path by temporarily
+intercepting `window.fetch` for `/api/history` to return zero rows, then restoring it —
+no synthetic component state, no server change), and signed-out (via the header's real
+sign-out button — this did sign the user's actual browser session out; flagged to them
+to sign back in). Mobile checked for header/hero/locked-panel via an injected same-origin
+iframe (same technique as the previous session, `resize_window` still doesn't affect the
+viewport in this environment); the signed-in row's mobile-specific rule (severity chip
+loses its border at ≤600px, transcribed directly from the handoff) was added correctly
+but not re-verified live, to avoid a second sign-out/sign-in cycle on the real account.
+
 ## 2026-09-13
 
 ### v3 redesign: routing, header auth, tier-aware source states, history page

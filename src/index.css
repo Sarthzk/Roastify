@@ -14,9 +14,16 @@
   --accent:    #e2b714; /* amber — brand */
   --accent-dk: #8a7420; /* selected sublabels, selected source tag, upgrade link */
   --ink:       #d1d0c5; /* primary text */
-  --ink-2:     #646669; /* secondary text, labels */
-  --ink-3:     #4a4c4f; /* tertiary — placeholders, faint labels */
+  --ink-2:     #646669; /* secondary text, labels — gutter labels only, never row content */
+  --ink-3:     #4a4c4f; /* tertiary — placeholders, faint labels — gutter labels only, never row content */
   --ink-4:     #3d3f42; /* struck-through fix index */
+
+  /* Added for the /history row-content hierarchy — list rows are primary page content,
+     not gutter labels, so they need their own brighter mid-tones instead of --ink-2/-3
+     (~7:1 and ~5:1 contrast on black, vs. --ink-2/-3's lower contrast meant for
+     secondary chrome). Not part of the original v2/v3 token set. */
+  --ink-row-2: #9a9992; /* history row secondary content — persona, severity chip text */
+  --ink-row-3: #7c7e81; /* history row tertiary content — source kind kicker, date */
 
   --rule:      #2c2e31; /* 1px and 2px structural rules */
   --rule-2:    #1c1e21; /* fix rows, hairlines, thin spacers */
@@ -1190,9 +1197,13 @@ a:hover {
 .history-list-label {
   color: var(--accent);
 }
+/* Row type hierarchy — the row is the page's primary content, so it reads brighter
+   than the gutter labels around it. Three explicit levels (source handle = primary,
+   persona/severity = secondary, source kind/date = tertiary) using the --ink-row-*
+   tokens above; nothing in a row uses --ink-2/--ink-3, which stay gutter-label-only. */
 .hist-row {
   display: grid;
-  grid-template-columns: 1.6fr 1fr 0.8fr 0.6fr;
+  grid-template-columns: 1.4fr 1fr 0.8fr 0.6fr;
   align-items: center;
   gap: 20px;
   width: 100%;
@@ -1202,32 +1213,51 @@ a:hover {
   background: transparent;
   cursor: default;
   text-align: left;
-  transition: background-color 0.15s;
 }
 .hist-row-source {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0; /* lets the handle actually truncate with ellipsis inside a grid column */
 }
 .hist-row-kind {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink);
-}
-.hist-row-handle {
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.hist-row-cell {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  color: var(--ink-2);
+  color: var(--ink-row-3);
+}
+.hist-row-handle {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-row-persona {
+  font-size: 15px;
+  color: var(--ink-row-2);
+  white-space: nowrap;
+}
+.hist-row-severity {
+  justify-self: start;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-row-2);
+  white-space: nowrap;
 }
 .hist-row-date {
-  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-row-3);
+  white-space: nowrap;
 }
 .hist-load-more {
   width: 100%;
@@ -1290,6 +1320,69 @@ a:hover {
 .history-empty-provider--secondary:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* The whole /history route is a flex column filling the space between header and
+   footer — this is what lets the Next/Empty panel below grow to close the dead gap a
+   short list would otherwise leave, without stretching the signed-out locked panel
+   (which has no flex-grow child, so it's unaffected and keeps its existing behavior). */
+.history-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* The list does not stretch to fill the viewport and the footer never floats alone:
+   the list section above sizes to its rows, and this closing panel takes flex:1 with a
+   min-height floor, so one, two, or three roasts leave no dead gap. On a long list
+   there's no leftover space to grow into, so it just sits at min-height — "the panel
+   stays on long lists too; it just stops expanding." */
+.history-next-row {
+  flex: 1;
+  min-height: 260px;
+}
+.history-next-panel {
+  padding: 44px 28px;
+  background: var(--ground-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+}
+.history-next-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.history-next-title {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.history-next-body {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 15px;
+  line-height: 26px;
+  color: var(--ink-row-2);
+  text-wrap: pretty;
+}
+.history-next-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 24px;
+  min-height: 48px;
+  width: fit-content;
+  background: var(--accent);
+  border: 0;
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 /* ===========================================================================
@@ -1508,6 +1601,7 @@ a:hover {
 
   .hist-row { display: block; padding: 16px 20px; }
   .hist-row > * { padding: 3px 0; }
+  .hist-row-severity { border: 0; }
 
   .share-body, .out-body.share-body { padding: 26px 20px 30px; }
   .cta { padding: 28px 20px; }
