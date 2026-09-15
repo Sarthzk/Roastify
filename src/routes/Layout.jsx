@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 // Persists across every route (header + footer); everything else — hero, form, output,
@@ -148,6 +148,9 @@ export default function Layout() {
 
       <footer className="footer">
         <div className="footer-name">Made by Sarthak Mohite</div>
+        <Link to="/privacy" className="footer-link">
+          Privacy
+        </Link>
         <div className="footer-spacer" />
         <div className="footer-brand">
           <span className="footer-brand-mark" />

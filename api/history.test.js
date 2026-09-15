@@ -17,11 +17,12 @@ vi.mock("./_lib/auth.js", () => ({
 }));
 
 // A minimal chainable fake of the real Supabase query builder — .from().select()
-// .order().limit() all return `this`, and the chain itself is awaitable via `.then`,
-// same as the real client. queryMock records the final resolved { data, error } per test
-// and getSupabaseClientForUserMock records which token built the client, so tests can
-// assert the endpoint queries *as the caller* (RLS-backed) rather than via any
-// admin/service-role client. No live Supabase calls — matches the repo's testing norms.
+// .order().limit()/.delete().eq() all return `this`, and the chain itself is awaitable
+// via `.then`, same as the real client. queryMock records the final resolved
+// { data, error } (or { error, count } for a delete) per test and
+// getSupabaseClientForUserMock records which token built the client, so tests can assert
+// the endpoint queries *as the caller* (RLS-backed) rather than via any admin/service-role
+// client. No live Supabase calls — matches the repo's testing norms.
 function makeFakeClient() {
   const builder = {
     from: () => builder,
@@ -29,6 +30,8 @@ function makeFakeClient() {
     order: () => builder,
     limit: () => builder,
     lt: () => builder,
+    delete: () => builder,
+    eq: () => builder,
     then: (resolve) => resolve(queryMock()),
   };
   return builder;
@@ -58,8 +61,8 @@ function createMockRes() {
   };
 }
 
-function req({ authorization, url = "/api/history" } = {}) {
-  return { method: "GET", url, headers: authorization ? { authorization } : {} };
+function req({ authorization, url = "/api/history", method = "GET" } = {}) {
+  return { method, url, headers: authorization ? { authorization } : {} };
 }
 
 describe("GET /api/history", () => {
@@ -127,6 +130,74 @@ describe("GET /api/history", () => {
     try {
       const res = createMockRes();
       await handler(req({ authorization: "Bearer real-user-token" }), res);
+      expect(res.statusCode).toBe(500);
+      expect(res.body.error.code).toBe("INTERNAL_ERROR");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe("DELETE /api/history", () => {
+  afterEach(() => {
+    getAuthenticatedUserMock.mockReset();
+    getAuthenticatedUserMock.mockResolvedValue(null);
+    getSupabaseClientForUserMock.mockReset();
+    queryMock.mockReset();
+  });
+
+  it("rejects a request with no Authorization header with SIGN_IN_REQUIRED (401)", async () => {
+    const res = createMockRes();
+
+    await handler(req({ method: "DELETE", url: "/api/history?id=r1" }), res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error.code).toBe("SIGN_IN_REQUIRED");
+    expect(getSupabaseClientForUserMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing id with MISSING_INPUT (400) without touching the client", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    const res = createMockRes();
+
+    await handler(req({ method: "DELETE", url: "/api/history", authorization: "Bearer real-user-token" }), res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe("MISSING_INPUT");
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes via a client scoped to the caller's own token, never a different one", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ error: null, count: 1 });
+    const res = createMockRes();
+
+    await handler(req({ method: "DELETE", url: "/api/history?id=r1", authorization: "Bearer real-user-token" }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getSupabaseClientForUserMock).toHaveBeenCalledWith("real-user-token");
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("returns ROAST_NOT_FOUND (404) when the id doesn't exist or isn't the caller's — same response either way", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ error: null, count: 0 });
+    const res = createMockRes();
+
+    await handler(req({ method: "DELETE", url: "/api/history?id=someone-elses-roast", authorization: "Bearer real-user-token" }), res);
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error.code).toBe("ROAST_NOT_FOUND");
+  });
+
+  it("returns a real 500 envelope (not a crash) when the delete itself errors", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ error: new Error("db unreachable"), count: null });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const res = createMockRes();
+      await handler(req({ method: "DELETE", url: "/api/history?id=r1", authorization: "Bearer real-user-token" }), res);
       expect(res.statusCode).toBe(500);
       expect(res.body.error.code).toBe("INTERNAL_ERROR");
     } finally {

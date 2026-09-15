@@ -130,3 +130,42 @@ export async function getHistory(accessToken, cursor) {
 
   return data;
 }
+
+// Hard-deletes one of the caller's own roasts. `id` only says which row; the server never
+// trusts it for *whose* row — see api/history.js's handleDelete, backed by Postgres RLS.
+export async function deleteRoast(accessToken, id) {
+  const res = await fetch(`/api/history?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to delete roast: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// Permanently deletes the caller's own account and every roast attached to it (see
+// api/account.js) — irreversible, so the caller (src/routes/Privacy.jsx) gates this
+// behind its own explicit confirmation step before ever calling it.
+export async function deleteAccount(accessToken) {
+  const res = await fetch("/api/account", {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to delete account: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}

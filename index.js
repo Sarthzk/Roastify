@@ -34,6 +34,7 @@ loadEnvFile("./.env");
 const { default: roastHandler } = await import("./api/roast.js");
 const { default: rateLimitStatusHandler } = await import("./api/rate-limit-status.js");
 const { default: historyHandler } = await import("./api/history.js");
+const { default: accountHandler } = await import("./api/account.js");
 
 const port = 3001;
 
@@ -44,6 +45,7 @@ const routes = [
   { path: "/api/roast", handler: roastHandler },
   { path: "/api/rate-limit-status", handler: rateLimitStatusHandler },
   { path: "/api/history", handler: historyHandler },
+  { path: "/api/account", handler: accountHandler },
 ];
 
 function sendJson(res, statusCode, payload) {

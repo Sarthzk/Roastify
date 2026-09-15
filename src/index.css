@@ -1236,12 +1236,16 @@ a:hover {
    persona/severity = secondary, source kind/date = tertiary) using the --ink-row-*
    tokens above; nothing in a row uses --ink-2/--ink-3, which stay gutter-label-only. */
 .hist-row {
+  position: relative; /* anchors .hist-row-delete, which sits outside the grid entirely */
   display: grid;
   grid-template-columns: 1.4fr 1fr 0.8fr 0.6fr;
   align-items: center;
   gap: 20px;
   width: 100%;
-  padding: 20px 28px;
+  /* Extra right padding clears .hist-row-delete's own footprint at top-right — kept in the
+     row's own padding box (not a 5th grid column) so it doesn't disturb the source/persona/
+     severity/date layout that's already been checked for overflow across breakpoints. */
+  padding: 20px 64px 20px 28px;
   border: 0;
   border-bottom: 1px solid var(--rule-2);
   background: transparent;
@@ -1292,6 +1296,147 @@ a:hover {
   letter-spacing: 0.16em;
   color: var(--ink-row-3);
   white-space: nowrap;
+}
+.hist-row-delete {
+  position: absolute;
+  top: 20px;
+  right: 28px;
+  min-height: var(--touch-44);
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.hist-row-delete:hover {
+  color: var(--accent);
+}
+/* Replaces the row entirely while its delete is pending confirmation — not a modal, since
+   the row itself already identifies which roast, and this keeps the list from jumping. */
+.hist-row-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.hist-row-confirm-text {
+  font-size: 14px;
+  color: var(--ink);
+}
+.hist-row-confirm-actions {
+  display: flex;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+.hist-row-confirm-yes,
+.hist-row-confirm-cancel {
+  min-height: var(--touch-44);
+  padding: 0 16px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+.hist-row-confirm-yes {
+  color: var(--accent);
+  border-color: var(--accent-dk);
+}
+.hist-row-confirm-yes:hover {
+  background: var(--accent);
+  color: #000;
+}
+.hist-row-confirm-cancel {
+  color: var(--ink-2);
+}
+.hist-row-confirm-cancel:hover {
+  color: var(--ink);
+}
+.hist-delete-error {
+  margin: 0;
+  padding: 14px 28px;
+  font-size: 13px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--rule-2);
+}
+
+/* ===========================================================================
+   /privacy
+   =========================================================================== */
+.privacy-body {
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.privacy-copy {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 15px;
+  line-height: 26px;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.privacy-copy strong {
+  color: var(--ink);
+}
+.privacy-copy a {
+  color: var(--accent);
+}
+.privacy-copy a:hover {
+  color: var(--accent-dk);
+}
+.privacy-link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.privacy-link-button:hover {
+  color: var(--accent-dk);
+}
+.privacy-delete-button {
+  min-height: var(--touch-44);
+  padding: 0 20px;
+  border: 1px solid var(--accent-dk);
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+.privacy-delete-button:hover {
+  background: var(--accent);
+  color: #000;
+}
+.privacy-confirm {
+  width: 100%;
+  max-width: 60ch;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--ground-2);
+  border: 1px solid var(--rule);
+}
+.privacy-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent);
 }
 .hist-load-more {
   width: 100%;
@@ -1504,6 +1649,20 @@ a:hover {
   letter-spacing: 0.2em;
   color: var(--ink);
 }
+.footer-link {
+  display: flex;
+  align-items: center;
+  padding: 24px 28px;
+  border-right: 1px solid var(--rule);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-2);
+  transition: color 0.18s;
+}
+.footer-link:hover {
+  color: var(--accent);
+}
 .footer-spacer {
   flex: 1;
 }
@@ -1626,7 +1785,9 @@ a:hover {
   .action-btn { padding: 18px 20px; min-height: 56px; border-left: 0; }
   .action-btn + .action-btn { border-top: 1px solid var(--rule-2); }
 
-  .hist-row { display: block; padding: 16px 20px; }
+  /* :not(.hist-row-confirm) so this doesn't also flip the confirm bar (same element, both
+     classes) from its own flex row to block — it needs to stay a row of text + buttons. */
+  .hist-row:not(.hist-row-confirm) { display: block; padding: 16px 56px 16px 20px; }
   .hist-row > * { padding: 3px 0; }
   /* .hist-row-persona/-severity/-date are <span>s (inline by default) — the padding above
      has no vertical effect on an inline element, so without this all three ran together
@@ -1635,6 +1796,7 @@ a:hover {
      flip .hist-row-source from flex to block and break its own kind/handle stacking. */
   .hist-row-persona, .hist-row-severity, .hist-row-date { display: block; }
   .hist-row-severity { border: 0; }
+  .hist-row-delete { top: 16px; right: 20px; }
 
   .share-body, .out-body.share-body { padding: 26px 20px 30px; }
   .cta { padding: 28px 20px; }
@@ -1642,6 +1804,7 @@ a:hover {
 
   .footer { display: block; }
   .footer-name { border-right: 0; border-bottom: 1px solid var(--rule); padding: 18px 20px; }
+  .footer-link { border-right: 0; border-bottom: 1px solid var(--rule); padding: 18px 20px; min-height: var(--touch-44); }
   .footer-spacer { display: none; }
   .footer-brand { border-left: 0; padding: 16px 20px; }
 }

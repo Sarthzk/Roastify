@@ -8,6 +8,71 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Privacy page + real per-roast/account delete (GYM_TASKS.md Task 2)
+The task's copy makes two concrete claims — "You can delete any roast from your history.
+Deleting your account removes every roast attached to it" — that had to be real before
+the page could ship, per the task's own explicit constraint. Checked first: neither delete
+path existed (no delete route anywhere in `api/`), so built both rather than shipping the
+promise unbacked.
+
+**Good news found in the schema**: `supabase/migrations/20260912000000_roasts_and_reports.sql`
+already had a `"roasts: delete own"` RLS policy (`for delete using (auth.uid() = user_id)`)
+and `user_id references auth.users(id) on delete cascade` — meaning deleting the Supabase
+auth user was already going to cascade-delete every roast attached to it at the database
+level, with zero new migration needed. That's most of what made this fit in one task
+instead of needing to stop and defer it.
+
+**Backend:**
+- `api/history.js` gained a `DELETE` method (`?id=` query param) alongside the existing
+  `GET` — deletes through the same RLS-scoped per-request client as the read path
+  (`getSupabaseClientForUser`), so *which* row is client-supplied but *whose* row is
+  enforced by Postgres itself, never application code trusting a client-sent user id. A
+  0-row match (wrong id or someone else's row) and a missing id both return the same
+  `ROAST_NOT_FOUND` (new error code in `api/_lib/errors.js`) — never a hint about which,
+  since that would leak whether an id exists.
+- `api/account.js` (new): `DELETE`, verifies the JWT, then
+  `supabaseAdmin.auth.admin.deleteUser(user.id)` via the service-role client — `user.id`
+  only ever comes from the verified token. The cascade above handles the roasts.
+- Both registered in `index.js`'s local route table. Both covered by real tests
+  (`api/account.test.js` new, `api/history.test.js` extended) — same fully-mocked pattern
+  as the rest of the suite, no live Supabase calls: unauthorized → 401, missing id → 400,
+  wrong/missing row → 404, real delete → scoped-client assertion, DB error → 500 envelope.
+
+**Frontend:**
+- `src/lib/openai.js`: `deleteRoast(accessToken, id)`, `deleteAccount(accessToken)`.
+- `/history` rows get a `delete` control (top-right, absolutely positioned so it didn't
+  need to fight the grid/breakpoint layout Task 1 just finished verifying) that swaps the
+  row for an inline "Delete this roast? This can't be undone." confirm bar — never a native
+  `confirm()`, and never deletes on the first click. Load failures already used `error`;
+  delete failures get their own `deleteError` so the two don't collide.
+- `src/routes/Privacy.jsx` (new, route `/privacy`, linked from the footer): the task's copy
+  verbatim except nothing needed correcting — it held up against how the app actually
+  works (Groq/Apify, the 1hr/24hr cache TTLs, "uploaded files are never stored," the OAuth
+  scope claims). The "Deleting your data" section links to `/history` for per-roast delete
+  and hosts the account-delete control directly: a trigger button that expands into the
+  same confirm-bar pattern as the history rows (reusing its button classes rather than
+  inventing a second one), and only past that second click calls `deleteAccount()`, signs
+  out, and navigates home. Signed-out visitors get "Sign in to manage or delete your
+  account," wired to the header's existing `openSignIn` rather than duplicating a
+  provider-picker on this page too.
+- `.hist-row`'s own right padding grew to clear the new delete button without adding a 5th
+  grid column; the ≤600px block-layout override got a `:not(.hist-row-confirm)` guard so it
+  doesn't also flip the confirm bar (same element, both classes) from flex to block.
+
+**Verified:** lint/tests(129)/build clean throughout. Visually on `/privacy` (signed-out
+copy, all sections, the `Sign in` link genuinely opening the header dropdown) and on
+`/history`'s locked panel — both at desktop width and via the same real-narrow-iframe
+technique from Task 1 (380px/600px, scripted overflow + touch-target checks, both clean).
+**What I could not verify live**: the actual authenticated delete flows (per-roast and
+account). This dev environment's `.env` points at the real Supabase project — there's no
+staging account — so exercising either delete for real would either do nothing (no real
+token) or risk touching real production data, neither of which is a real test. Verified
+those two paths by (a) the fully-mocked backend tests above, which exercise the real
+handler code, and (b) injecting the confirm-bar markup directly into the DOM (bypassing
+React, never a real fetch) to check the CSS/layout, then re-reading the React state logic
+by hand. This is a genuine gap, not a check I'm describing as done when it wasn't — flagging
+it plainly rather than claiming full coverage.
+
 ### Mobile compatibility audit (GYM_TASKS.md Task 1)
 Genuine narrow-viewport testing, not a CSS read-through: `resize_window` in this
 environment doesn't actually shrink the rendering viewport (confirmed broken again this
