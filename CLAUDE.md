@@ -481,7 +481,17 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   (added/removed in a `useEffect` gated on `signInOpen`, this one legitimately needs to be an effect
   since it subscribes to `document`, an external system). When `isSupabaseConfigured` is false (see
   "Auth & persistence" above), the whole nav/auth block is replaced by the original static `no login`
-  tag — there's nothing to route or sign into differently.
+  tag — there's nothing to route or sign into differently. `.app-root` (the header/`<Outlet>`/footer
+  wrapper) has no `min-height`, and `.footer` has no `margin-top: auto` — the footer sits flush after
+  whatever the current route renders, on every route, rather than pinning to the bottom of a forced
+  full-viewport box. An earlier version of this forced `.app-root` to `min-height: 100vh`, matching a
+  design handoff's own root-wrapper markup — but on a route shorter than the viewport (an idle
+  roaster on a tall screen, a short `/history` list, `/r/:slug`) that left a dead gap between content
+  and the footer, which turned out to matter more than the handoff fidelity once it showed up on real,
+  variable-length content rather than the handoff's own always-populated demo data. `html`/`body`/
+  `#root`'s own `min-height: 100%` (see "Layout shell" in `src/index.css`) still paints the ground
+  color for the full viewport regardless, so a short page just ends after its footer against that same
+  background rather than showing a mismatched gap.
 - `src/routes/Roaster.jsx` (route `/`) is what `src/App.jsx` used to be minus the header/footer: owns
   `url`, `type`, `severity`, `persona`, `model`, `result`, `loading`, `error`, `rateLimitStatus`,
   `resetKey`. Deliberately kept local to this route rather than lifted into `Layout.jsx` — per the

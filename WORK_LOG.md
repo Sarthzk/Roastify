@@ -66,6 +66,53 @@ viewport in this environment); the signed-in row's mobile-specific rule (severit
 loses its border at ≤600px, transcribed directly from the handoff) was added correctly
 but not re-verified live, to avoid a second sign-out/sign-in cycle on the real account.
 
+### Layout-level fix: dead gap between content and footer on every route
+The previous entry's `/history`-specific fix (a `flex:1` Next/Empty panel closing the
+gap on a short list) only ever addressed `/history`. Reported as still broken more
+broadly: any route short enough on a tall viewport — `/` idle, a short `/history` list,
+`/r/:slug` — left the same dead black band between its content and the footer, since the
+signed-out `/history` panel (which has no flex-grow child) was never covered by that fix
+either. Root cause was `.app-root`'s `min-height: 100vh` in `src/index.css`: it forced
+the header/content/footer flex column to at least fill the viewport, and `.footer`'s
+`margin-top: auto` then floated the footer down to close that forced height — so any
+route whose real content came in shorter than the viewport got an unexplained gap above
+the footer instead of the footer just following the content.
+
+Fixed at the layout level, not per-route, per instruction: removed `min-height: 100vh`
+from `.app-root` and the now-inert `margin-top: auto` from `.footer`. With no forced
+floor, `.app-root`'s height is just the sum of its children's natural heights, so the
+footer now sits flush after whatever the route rendered — the design intent from the
+start of this session, and a deliberate reversal of the earlier session's "keep the
+handoff's spec'd pin-to-viewport-bottom behavior" call, since that pattern turned out not
+to hold up against real, variable-length content. `html`/`body`/`#root` still carry
+`min-height: 100%`, so the ground color still fills a short page down to the true
+viewport bottom — a short page just ends after its footer against that same background,
+not a mismatched or clipped-looking gap.
+
+This made the previous session's `/history`-specific `flex:1` mechanism redundant: with
+`.app-root` no longer forcibly taller than its content, there's never leftover space for
+a `flex: 1` child to grow into, so `.history-page`'s wrapper class (now doing nothing)
+was deleted along with `.history-next-row`'s `flex: 1` — its `min-height: 260px` alone
+still does the real work of keeping a short list's closing panel from looking too sparse,
+exactly as it already did for a long list in the previous session (long lists never had
+free space for `flex: 1` to grow into either, so nothing changes there).
+
+Verification: 120/120 tests, lint/build clean (no test changes needed — pure CSS/markup
+cleanup). Checked live against the user's real signed-in account: `/` idle on a
+genuinely tall viewport (a 1996px-tall injected same-origin iframe, since the real
+browser window here isn't tall enough to trigger the bug on its own) — confirmed via
+direct measurement that content renders at its natural ~1065px height with the footer's
+bottom edge exactly at that height, not stretched to fill the extra ~930px; `/` with a
+completed roast (naturally long content, footer flush, no regression); `/history` signed
+in with a short (2-row) list (footer flush, Next panel at its natural min-height, not
+stretched); `/history` signed out (previously still broken after the last session's fix —
+confirmed fixed now); `/r/:slug` (footer flush). Also checked a short viewport (496px,
+same iframe technique) to confirm no regression: the roaster's real content (1205px) is
+still taller than the viewport, the page still scrolls normally, and the footer still
+appears correctly at the true end of that content once scrolled down. Signed the user's
+real account out again to test the signed-out case, same as last session — flagged to
+them to sign back in.
+
 ## 2026-09-13
 
 ### v3 redesign: routing, header auth, tier-aware source states, history page

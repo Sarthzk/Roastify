@@ -15,12 +15,13 @@ function formatDate(iso) {
 }
 
 // The closing panel below the list — title/body/CTA are count-aware, and it's the
-// list's own terminator (no separate footer CTA needed): it takes flex:1 with a
-// min-height floor so a short list still fills the space above the footer, and just
-// stops expanding once a long list already fills the viewport on its own. The "kept
-// until you delete it" / "re-run any saved roast" lines from the handoff are dropped —
-// neither delete nor re-run exists yet (that's the sharing task), and the first
-// sentence in each case is the part that's actually true today.
+// list's own terminator (no separate footer CTA needed). Its min-height keeps a short
+// list from looking too sparse; the footer sitting flush after it (rather than pinned
+// to the viewport bottom) is the shared layout's job, not this panel's — see
+// src/index.css's "Layout shell". The "kept until you delete it" / "re-run any saved
+// roast" lines from the handoff are dropped — neither delete nor re-run exists yet
+// (that's the sharing task), and the first sentence in each case is the part that's
+// actually true today.
 function nextPanelCopy(count) {
   if (count === 0) {
     return {
@@ -93,7 +94,7 @@ export default function History() {
   const next = nextPanelCopy(roasts.length);
 
   return (
-    <div className="history-page">
+    <div>
       <section className="hero">
         <div className="hero-main">
           <h1 className="hero-title hero-title--small">History</h1>

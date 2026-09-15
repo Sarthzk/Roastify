@@ -121,8 +121,15 @@ a:hover {
 /* ===========================================================================
    Layout shell
    =========================================================================== */
+/* No min-height here — the footer must sit flush after whatever the route renders, not
+   pin to the bottom of a forced full-viewport box. A route shorter than the viewport
+   (an idle roaster on a tall screen, a short /history list, /r/:slug) previously left a
+   dead gap between its content and the footer, since min-height: 100vh forced .app-root
+   taller than its actual content and .footer's margin-top: auto then floated it down to
+   fill that forced height. html/body/#root's own min-height: 100% (src/index.css above)
+   still paints the ground color for the full viewport regardless, so a short page just
+   ends after its footer against that same background — not a mismatched gap. */
 .app-root {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--ground);
@@ -1322,22 +1329,11 @@ a:hover {
   border-color: var(--accent);
 }
 
-/* The whole /history route is a flex column filling the space between header and
-   footer — this is what lets the Next/Empty panel below grow to close the dead gap a
-   short list would otherwise leave, without stretching the signed-out locked panel
-   (which has no flex-grow child, so it's unaffected and keeps its existing behavior). */
-.history-page {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-/* The list does not stretch to fill the viewport and the footer never floats alone:
-   the list section above sizes to its rows, and this closing panel takes flex:1 with a
-   min-height floor, so one, two, or three roasts leave no dead gap. On a long list
-   there's no leftover space to grow into, so it just sits at min-height — "the panel
-   stays on long lists too; it just stops expanding." */
+/* This panel's own min-height is the only thing keeping a short list from looking too
+   sparse — now that .app-root doesn't force a full-viewport height (see "Layout shell"
+   above), the footer already sits flush after this row on its own, on every route, so
+   there's no leftover space left for a flex:1 here to grow into. */
 .history-next-row {
-  flex: 1;
   min-height: 260px;
 }
 .history-next-panel {
@@ -1469,7 +1465,6 @@ a:hover {
    10. Footer
    =========================================================================== */
 .footer {
-  margin-top: auto;
   display: flex;
   align-items: stretch;
   border-top: 2px solid var(--rule);
