@@ -1,15 +1,64 @@
 # Roastify — Improvement Tasks
 
-Context: React + Vite app, Vercel serverless function (`api/roast.js`) calling Groq
-(`gpt-oss-120b`, production-pinned; GPT-4o survives only as a dev-only comparison
-option), Apify for Instagram scraping only (LinkedIn moved to PDF upload — see Section
-9), GitHub REST API for GitHub, Upstash Redis for rate limiting. Live at
-https://roastify-two.vercel.app/
+Context: React + Vite app, Vercel serverless functions calling Groq (`gpt-oss-120b`,
+production-pinned; GPT-4o survives only as a dev-only comparison option), Apify for
+Instagram scraping only (LinkedIn is PDF upload, not scraped), GitHub REST API for
+GitHub, Upstash Redis for rate limiting, Supabase for auth + Postgres persistence. Live
+at https://roastify-two.vercel.app/
 
-Work through these roughly in order — each item is scoped to be a self-contained change.
-Run `npm run lint` and `npm run build` after each section.
+Open items are listed first, so this file stays readable in under a minute. Resolved
+work is kept below for reference, one `<details>` block per historical section —
+expand a section only if you need the detail behind a decision. Run `npm run lint`,
+`npm test`, and `npm run build` after any change.
 
-## 1. Critical fixes
+---
+
+## Open
+
+### Needs a decision
+- **Zoom/breakpoint compounding** (found 2026-08-23, Section 13 below). The page
+  actually renders at ~91.3% effective scale, not the intended 97% — `zoom` applied to
+  three nested ancestors (`html`, `body`, `#root`) compounds multiplicatively rather than
+  applying once. This was later consolidated onto `#root` alone *at the same already-
+  compounded value* (Section 15) so the visual result didn't change — but the underlying
+  question from Section 13 is still open: was 91.3% actually the intended final scale, or
+  should this be corrected to a true flat 97% (which would also mean re-deriving the
+  breakpoint values — see the table in Section 13 for both options)? Needs a decision
+  before either the zoom value or the breakpoints themselves are worth touching.
+
+### Needs the user (infrastructure/account settings, not code — matches GYM_TASKS.md's
+"Blocked" section)
+- Bot protection (Cloudflare Turnstile or hCaptcha) in front of `/api/roast` — needs
+  Cloudflare keys not yet created.
+- Hard spend caps / billing alerts set directly on the Groq, Apify, and OpenAI accounts —
+  defense in depth beyond the app's own rate limiting; a dashboard setting, not code.
+- Uptime monitoring (UptimeRobot / Better Uptime) on the production URL — never set up.
+- A regular habit of actually checking the Groq/Apify/OpenAI spend dashboards — they
+  exist, but watching them is a person's job, not something to automate here.
+
+### Feature ideas (no urgency — pick what's interesting)
+- "Redemption mode" — after checking off tips, let the user re-submit and see if the
+  roast softens.
+- X/Twitter profile support alongside GitHub/LinkedIn/Instagram/resume.
+- ~~Roast history saved to `localStorage`~~ — superseded: real signed-in, Postgres-backed
+  history already exists (Section 14/15), so this no longer needs doing.
+
+### Small open item
+- **Live prompt-injection verification** (Section 6, 2026-08-19). The fencing mechanism
+  (`fenceUntrustedContent()`, `UNTRUSTED_DATA_NOTICE`) is built and has real unit test
+  coverage, but nobody has actually run a live model call against a real scraped bio
+  containing an injection attempt to confirm the model genuinely ignores it rather than
+  just trusting the prompt instruction in the abstract. Still owed.
+
+---
+
+## Resolved / archived
+
+Everything below is historical record, newest work at the bottom. Collapsed by
+section — expand only if you need the reasoning behind something.
+
+<details>
+<summary><strong>1. Critical fixes</strong> (2026-08-19) — debug data leak removed, fallback roasts deleted (reversed later, see Section 6), input length capped, LinkedIn/Instagram scrape timing tightened</summary>
 
 - [x] **Remove the debug data leak.** In `api/roast.js`, the handler always returns
   `_debug_scraped_data` and `_debug_scraped_raw` in the JSON response — this ships the
@@ -36,7 +85,10 @@ Run `npm run lint` and `npm run build` after each section.
   `maxDuration`. Either reduce the poll budget, or add a clear "still working" state
   in the UI so a timeout doesn't look like a silent failure.
 
-## 2. Quick UX wins
+</details>
+
+<details>
+<summary><strong>2. Quick UX wins</strong> (2026-08-19) — OG/Twitter meta tags, a real checkbox, native share, rate limit surfaced in the UI</summary>
 
 - [x] **Add Open Graph / Twitter Card meta tags** to `index.html` (`og:title`,
   `og:description`, `og:image`, `twitter:card`). Right now a shared Roastify link has
@@ -44,10 +96,10 @@ Run `npm run lint` and `npm run build` after each section.
   (**Update 2026-08-19**: `og:image`/`twitter:image` removed — see Section 8. They
   pointed at a `/og-image.png` that never existed; no image-generation capability was
   available to produce a real branded one, so the broken reference was removed rather
-  than left dangling. `twitter:card` downgraded from `summary_large_image` to `summary`
-  to match — the large-image card type requires an image to render sensibly. A real
-  1200x630 image can be added to `public/` later; `og:image`/`twitter:image` should be
-  re-added alongside it.)
+  than left dangling. **Update 2026-09-15**: re-added for real — a generated
+  1200×630 PNG now exists at `public/og-image.png` via the committed
+  `scripts/generate-og-image.mjs`; `twitter:card` restored to `summary_large_image`.
+  See WORK_LOG.md.)
 
 - [x] **Replace the fake checkbox in `RoastCard.jsx`.** The tip list uses a
   `<label onClick>` + styled `<span>` instead of a real `<input type="checkbox">` —
@@ -61,14 +113,18 @@ Run `npm run lint` and `npm run build` after each section.
   timer) against the 5-per-hour Upstash limit instead of only reacting to a 429 after
   the fact.
 
-## 3. Production readiness (do this next, before features)
+</details>
+
+<details>
+<summary><strong>3. Production readiness</strong> — security/abuse prevention, observability, reliability, testing/CI, legal/compliance, docs</summary>
 
 ### Security & abuse prevention
 - [ ] Add bot protection (Cloudflare Turnstile or hCaptcha) in front of roast
   submission — without it, anyone can script-hammer `/api/roast` and run up the
-  OpenAI + Apify bill regardless of the Upstash rate limit.
+  OpenAI + Apify bill regardless of the Upstash rate limit. **Still open — see "Open"
+  at the top of this file.**
 - [ ] Set hard spend caps / billing alerts on the OpenAI and Apify accounts directly
-  (defense in depth beyond app-level rate limiting).
+  (defense in depth beyond app-level rate limiting). **Still open.**
 - [x] Restrict CORS on `api/roast.js` to the production domain only. (**Update
   2026-08-19**: extended to a real allowlist — production origin, this project's Vercel
   preview URLs, and localhost for dev — since a single hardcoded production origin was
@@ -86,11 +142,15 @@ Run `npm run lint` and `npm run build` after each section.
   `UPSTASH_REDIS_REST_TOKEN`).
 
 ### Observability
-- [ ] Add error tracking (e.g. Sentry) in `api/roast.js` in place of bare
-  `console.error` calls, so failures surface somewhere you'll actually see them.
+- [x] Add error tracking (Sentry) in place of bare `console.error` calls, so failures
+  surface somewhere you'll actually see them. **Done 2026-09-15** — `api/_lib/sentry.js`,
+  wired alongside every existing `console.error` under `api/` (never replacing it), off
+  entirely until `SENTRY_DSN` is set (no project created yet). See WORK_LOG.md and the
+  README's "Error tracking" section.
 - [ ] Add uptime monitoring on the production URL (UptimeRobot / Better Uptime).
+  **Still open.**
 - [ ] Set up a simple way to track OpenAI + Apify spend over time (both provide
-  usage dashboards — just make sure someone's actually watching them).
+  usage dashboards — just make sure someone's actually watching them). **Still open.**
 
 ### Reliability
 - [x] Add retry-with-backoff around the OpenAI, GitHub, and Apify fetch calls
@@ -126,14 +186,20 @@ Run `npm run lint` and `npm run build` after each section.
   (a private/nonexistent account fails honestly, never a silent guess), scraped data
   cached 24h and not persisted beyond that, and `INSTAGRAM_ENABLED` (see Section 10) as
   the fast, no-deploy removal path if the calculus ever changes.
-- [ ] Add a short privacy note on the site covering what's sent to Groq/Apify and
+- [x] Add a short privacy note on the site covering what's sent to Groq/Apify and
   confirming no profile data is persisted server-side beyond ephemeral rate-limit
-  counters and the 24h Instagram/GitHub scrape cache.
+  counters and the 24h Instagram/GitHub scrape cache. **Done 2026-09-15** — real `/privacy`
+  route, linked from the footer, with working per-roast delete (on each `/history` row)
+  and account delete (on the privacy page itself) backing the page's delete claims — see
+  WORK_LOG.md.
 
 ### Documentation
 - [x] Expand the README with real setup steps and the `.env.example` reference.
 
-## 4. LLM migration: GPT-4o → open model via OpenRouter
+</details>
+
+<details>
+<summary><strong>4. LLM migration: GPT-4o → open model via OpenRouter</strong> — superseded, historical only; OpenRouter/Cohere no longer exist in this codebase (see 4B)</summary>
 
 **Superseded 2026-08-19 — see Section 4B below.** OpenRouter and Cohere Command A/R have
 been removed entirely. Kept here as historical record of the first migration attempt;
@@ -190,7 +256,10 @@ cutting over — don't swap blind.
 Note: OpenRouter is pay-per-token with no subscription — credits don't expire, so
 there's no minimum spend while you're just running the eval.
 
-## 4B. Provider swap: OpenRouter/Cohere → Groq, production pinned to one free model
+</details>
+
+<details>
+<summary><strong>4B. Provider swap: OpenRouter/Cohere → Groq</strong> (2026-08-19) — production pinned to one free model (gpt-oss-120b), model picker becomes dev-only</summary>
 
 Goal: drop OpenRouter/Cohere entirely, move to Groq (free tier — no credit card,
 rate-limited rather than metered) as the sole production model, and stop letting
@@ -249,18 +318,26 @@ production users pick a model at all — the picker becomes a dev-only tool.
   logs instead of silently vanishing into the generic canned fallback. 2 new tests cover
   `buildCompletionParams`'s per-provider param split.
 
-## 5. Feature ideas (pick what's interesting — later)
+</details>
 
-- [ ] Roast history saved to `localStorage` so past roasts aren't lost on refresh.
+<details>
+<summary><strong>5. Feature ideas</strong> — persona picker and SSE streaming shipped; localStorage history superseded; redemption mode and X/Twitter still open (see "Open" at top)</summary>
+
+- [ ] ~~Roast history saved to `localStorage` so past roasts aren't lost on refresh.~~
+  Superseded — see "Open" at the top of this file.
 - [x] Persona picker beyond "Ricky Gervais" — see Section 7. Shipped 3 selectable
   personas (cynic/recruiter/desi-uncle), not 2, with the prompt layer restructured to
   support them.
 - [x] Stream the roast token-by-token (SSE) instead of waiting for the full JSON blob.
 - [ ] "Redemption mode" — after checking off tips, let the user re-submit and see if
-  the roast softens.
-- [ ] X/Twitter profile support alongside GitHub/LinkedIn/Instagram/resume.
+  the roast softens. **Still open — see "Open" at the top of this file.**
+- [ ] X/Twitter profile support alongside GitHub/LinkedIn/Instagram/resume. **Still
+  open.**
 
-## 6. Honest error handling + prompt injection defense (2026-08-19)
+</details>
+
+<details>
+<summary><strong>6. Honest error handling + prompt injection defense</strong> (2026-08-19) — canned fallbacks replaced with real error codes; fencing built; live injection test still owed (see "Open" at top)</summary>
 
 Goal: replace the canned-fallback-on-any-failure behavior (Section 1) with real, specific
 errors the client can distinguish from a genuine roast, and close the prompt-injection
@@ -291,7 +368,10 @@ gap left open by length-capping alone (Section 1).
   with `code`/`type`/`model`/`message` — never the scraped profile content or resume
   text (no PII). `LLM_PARSE_FAILURE` / `LLM_INVALID_FORMAT` additionally log the raw
   model buffer (truncated to 2000 chars), the deliberate real-world signal for how often
-  prompt-only JSON enforcement (Section 4B) actually fails.
+  prompt-only JSON enforcement (Section 4B) actually fails. **Update 2026-09-15**: also
+  reports to Sentry (`api/_lib/sentry.js`) alongside the console log, tagged with
+  `code`/`type`/`model`/`persona` only — never `bufferPreview`. See Section 3's
+  Observability item and WORK_LOG.md.
 - [x] Client: `src/lib/openai.js`'s `getRoast`/`consumeRoastStream` parse the new
   envelope for both the JSON and SSE `error` paths into one consistent thrown `Error`
   shape (`.message`, `.code`, `.retryable`, `.rateLimit`). `App.jsx` shows the real
@@ -326,11 +406,13 @@ gap left open by length-capping alone (Section 1).
 - [x] Tests: fence structure (matching open/closing markers), marker uniqueness across
   calls, stripping of pre-existing fence-shaped content (both hex and bare forms), and a
   well-formed closing fence at the full 4000-char `MAX_INPUT_LENGTH`.
-- Manual verification (live model call, not run by Claude — see `WORK_LOG.md` for the
-  curl command) still pending: confirm the model actually ignores an injection attempt
-  in a real scraped bio rather than just trusting the prompt instruction in the abstract.
+- [ ] Manual verification (live model call) still pending — see "Open" at the top of
+  this file.
 
-## 7. Persona system + prompt layer restructure (2026-08-19)
+</details>
+
+<details>
+<summary><strong>7. Persona system + prompt layer restructure</strong> (2026-08-19) — 3 personas shipped (cynic/recruiter/desi-uncle), prompt fragments composed instead of duplicated</summary>
 
 Goal: replace the single hardcoded "Ricky Gervais" voice with three selectable personas,
 without letting the prompt layer grow into 12 near-duplicate templates (4 types x 3
@@ -419,7 +501,10 @@ personas) — restructure to composed fragments first, then add personas as data
 - Not run by Claude, per instruction — the user will run `node scripts/eval-models.mjs`
   and read the three voices themselves.
 
-## 8. Cleanup pass: split `api/roast.js`, dead weight, design tokens (2026-08-19)
+</details>
+
+<details>
+<summary><strong>8. Cleanup pass: split api/roast.js, dead weight, design tokens</strong> (2026-08-19) — no behavior changes aside from the CORS/cache-TTL/og-image items</summary>
 
 Goal: get the codebase ready for auth + Postgres without making anything worse first.
 No new features, no behavior changes (aside from the CORS/cache-TTL/og-image items,
@@ -523,13 +608,8 @@ which were explicitly requested behavior fixes, not refactor side effects).
   bumped to 24 hours (billed Apify runs, slow-changing profiles). New
   `api/_lib/scrapeCache.test.js` mocks the Redis client to assert the exact TTL passed
   per type.
-- [x] **`og:image`**: removed, rather than fabricated. `index.html` referenced
-  `/og-image.png`, which never existed in `public/`. No image-generation capability was
-  available to produce a real 1200x630 branded image in this environment, and inventing
-  one felt like scope creep beyond a cleanup pass — so the broken `og:image`/
-  `twitter:image` references were removed instead, and `twitter:card` downgraded from
-  `summary_large_image` (which requires an image) to `summary`. A real image can be
-  added to `public/` later, with the tags re-added alongside it.
+- [x] **`og:image`**: removed, rather than fabricated, at the time — see Section 2's
+  update for the 2026-09-15 follow-up that generated a real one.
 
 ### pdfjs-dist advisory — flagged, not fixed
 - [x] Checked the current advisory (GHSA-hq66-cqwq-w95j / CVE-2026-16633): arbitrary JS
@@ -555,9 +635,15 @@ which were explicitly requested behavior fixes, not refactor side effects).
   6.x's package layout, and the "minimum supported browsers" bump doesn't matter for
   this app's actual target audience. Likely low-to-moderate effort, but should be tried
   in a branch and verified, not assumed.
-- Not upgraded — left for explicit approval, per instruction.
+- Not upgraded — left for explicit approval, per instruction. **Still true as of
+  2026-09-15** — `npm audit` still flags this (2 moderate + this 1 high), noticed again
+  in passing during Task 4/5 of this session's work but out of scope to fix without
+  explicit approval, same as before.
 
-## 9. Replace LinkedIn scraping with LinkedIn PDF upload (2026-08-21)
+</details>
+
+<details>
+<summary><strong>9. Replace LinkedIn scraping with LinkedIn PDF upload</strong> (2026-08-21) — net deletion; LinkedIn actor never worked, replaced with the same PDF flow resume already used</summary>
 
 Goal: the Apify LinkedIn actor never actually worked (run log: receives the URL fine,
 fails at fetch with "Unexpected profile response" — LinkedIn blocks unauthenticated
@@ -631,7 +717,10 @@ the existing resume flow. Net deletion, not a feature add.
   small conditional, not new logic) and the two test additions — a real net deletion
   overall, as intended.
 
-## 10. Visual redesign (Claude Design v2 handoff) + Instagram kill switch (2026-08-21)
+</details>
+
+<details>
+<summary><strong>10. Visual redesign (Claude Design v2 handoff) + Instagram kill switch</strong> (2026-08-21) — same product/API, new presentation; mobile breakpoints later verified for real (see Section 15 note below and 2026-09-15's Task 1)</summary>
 
 Goal: implement a full presentation-layer redesign from a Claude Design handoff (read via
 the DesignSync MCP tool) — same product, same API contract, only the look changes — plus
@@ -674,17 +763,20 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
 - [x] Old `--color-*` CSS token set removed entirely (confirmed unreferenced via grep
   before deleting), replaced by the new `--ground-*`/`--ink-*`/`--rule-*`/`--accent*` set
   copied verbatim from the handoff.
-- [x] Tests: no frontend test suite exists (vitest only covers `api/**/*.test.js`), so
-  this pass touched zero existing tests — confirmed 87/87 backend tests still pass
-  unmodified (aside from the kill-switch item below).
+- [x] Tests: no frontend test suite exists at the time (vitest only covered
+  `api/**/*.test.js` until 2026-09-15's Task 7 — see Section 3/Testing), so this pass
+  touched zero existing tests — confirmed 87/87 backend tests still pass unmodified
+  (aside from the kill-switch item below).
 - [x] **Manually verified live** in a real browser (desktop, real Groq/Apify/Upstash
   credentials): idle, a real error (invalid GitHub handle → synthesized detail line
   matching spec), a real streaming roast (watched the derived-from-lifecycle stage label
   and live char count update against actual Groq tokens), complete (meta row, working fix
-  checklist), and "roast another" reset. **Mobile breakpoints not manually verified** —
-  the available browser-resize tooling didn't actually shrink the rendering viewport in
-  this sandboxed environment; the `@media` rules are a verbatim transcription of the
-  handoff's own source, but a real responsive-mode check is still owed to the user.
+  checklist), and "roast another" reset. **Mobile breakpoints not manually verified at
+  the time** — the available browser-resize tooling didn't actually shrink the rendering
+  viewport in that session. **Resolved 2026-09-15**: a full real-narrow-viewport audit
+  (380/600/900px, via a same-origin iframe with a genuinely different
+  `window.innerWidth`, not the broken resize tool) found and fixed several real mobile
+  bugs across the whole app — see WORK_LOG.md's Task 1 entry.
 
 ### Instagram kill switch
 - [x] `api/_lib/config.js`'s `isInstagramEnabled()` (`INSTAGRAM_ENABLED !== "false"`, same
@@ -701,7 +793,10 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   updating for the new response field — an intentional, in-scope shape change, not a
   regression). 95/95 total passing. `npm run lint` and `npm run build` both clean.
 
-## 11. Auto-scroll to Output, actually fixed (2026-08-21)
+</details>
+
+<details>
+<summary><strong>11. Auto-scroll to Output, actually fixed</strong> (2026-08-21) — root cause was window.scrollTo clamping to the page's height at call time, not while streamed content was still growing it</summary>
 
 - [x] Auto-scroll to the Output section wasn't actually working, despite being
   implemented and reportedly verified in the prior session. Root cause, confirmed
@@ -731,7 +826,10 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   once per request), `scrollToOutput()` extracted once and called from both
   `handleSubmit` and the terminal-state effect instead of being duplicated.
 
-## 12. UI scale-down (2026-08-21, adjusted 90% → 95% → 97% same day)
+</details>
+
+<details>
+<summary><strong>12. UI scale-down</strong> (2026-08-21) — font-size scaling was a no-op given the design's hardcoded px values; switched to zoom instead</summary>
 
 - [x] First attempt (`font-size: 90%` on `html, body, #root`, as literally requested)
   was empirically verified to have **zero visible effect** — every font-size and
@@ -743,7 +841,10 @@ an `INSTAGRAM_ENABLED` kill switch since it touches the same source picker.
   `document.body.scrollHeight` dropping from 1567px to exactly 1410px (1567 × 0.9) and a
   visual screenshot pass across hero/source/voice/roast-card/footer for alignment.
 
-## 13. Cleanup pass: dead dependencies, zoom/breakpoint audit, doc accuracy (2026-08-23)
+</details>
+
+<details>
+<summary><strong>13. Cleanup pass: dead dependencies, zoom/breakpoint audit, doc accuracy</strong> (2026-08-23) — removed framer-motion and Tailwind; found the zoom-compounding bug (see "Open" at top); fixed stale docs</summary>
 
 Goal: no new features — remove unused dependencies, check a real correctness question
 about the shipped `zoom: 97%` rule against the responsive breakpoints, and fix stale
@@ -795,7 +896,10 @@ documentation. Net deletion.
   0.9703, matching a single un-compounded 97%. **The page is actually rendering at
   ≈91.3% scale, not the intended 97%.** Not fixed — out of scope (the task says don't
   touch the zoom rule) — but this needs a decision along with the breakpoint question
-  below, since it changes the correction math.
+  below, since it changes the correction math. **Still an open decision — see the top of
+  this file.** (Section 15 later consolidated the 3-ancestor rule onto `#root` alone, but
+  at the same already-compounded 0.9127 value — a code cleanup, not a resolution of the
+  underlying question.)
 - [x] **Breakpoint correction, given the above**: because content lays out against
   `real_viewport_width / effective_zoom` (not the real viewport directly), the same
   nominal breakpoint value now trips later — at a smaller real viewport — than the
@@ -810,7 +914,10 @@ documentation. Net deletion.
   | Small phone | 380px | ~347px | ~369px |
   Not changed — reported only, per instruction. The two right-hand columns diverge by
   40–50px each, which is why the compounding bug needs a decision before the breakpoint
-  values themselves are worth touching.
+  values themselves are worth touching. **Note (2026-09-15)**: a full mobile audit at the
+  *current* nominal breakpoint values (380/600/900px, Section 15/Task 1) found and fixed
+  several real layout bugs, but did not revisit whether the breakpoint numbers themselves
+  should change — that's still gated on the decision above.
 
 ### Documentation accuracy
 - [x] `ROASTIFY_TASKS.md`'s own header fixed: "calling GPT-4o, Apify for
@@ -833,7 +940,10 @@ documentation. Net deletion.
   that, and `INSTAGRAM_ENABLED` (Section 10) as the fast, no-deploy removal path if the
   calculus changes. Task item marked resolved.
 
-## 14. Supabase auth + Postgres persistence (2026-09-12)
+</details>
+
+<details>
+<summary><strong>14. Supabase auth + Postgres persistence</strong> (2026-09-12) — anonymous use kept working with no login wall; migration since confirmed applied (see Section 16 and 2026-09-15's work)</summary>
 
 Goal: the foundation for chat and public share pages later — schema and persistence,
 not those features themselves. Anonymous use must keep working with no login wall.
@@ -893,11 +1003,17 @@ not those features themselves. Anonymous use must keep working with no login wal
   this surfaced: the `roasts` table doesn't exist on the connected Supabase project yet
   (the migration hasn't been applied there) — `persistRoast` failed open exactly as
   designed (the roast still completed for the user), logging "Could not find the table
-  'public.roasts' in the schema cache." **Applying the migration is a follow-up step for
-  the user**, not something done in this session (needs their Supabase CLI login/DB
-  password, or pasting the SQL into their dashboard's SQL editor).
+  'public.roasts' in the schema cache." **Applying the migration was flagged as a
+  follow-up step for the user at the time — since confirmed done**: Section 16
+  (2026-09-15) already shows real signed-in roasts being listed against the user's own
+  real account (one row, 3+ rows, a 26-row long list), and 2026-09-15's later
+  per-roast/account delete work (Section 3's privacy-note item) built directly on the
+  `"roasts: delete own"` RLS policy from this same migration already being live.
 
-## 15. v3 redesign: routing, header auth, tier-aware source states, history page (2026-09-13)
+</details>
+
+<details>
+<summary><strong>15. v3 redesign: routing, header auth, tier-aware source states, history page</strong> (2026-09-13) — routing added, /history built (GET only), share-page slug/visibility explicitly out of scope</summary>
 
 Goal: implement the v3 Claude Design handoff — routing, header auth UI wired to the
 session state already built in Section 14, tier/locked source states driven by real
@@ -920,6 +1036,8 @@ sharing flow — route and shell only.
   panel with GitHub/Google, closes on selection/outside-click/Escape/sign-in; signed-in
   avatar + handle + sign out). Old static "no login / free" tags removed, replaced by
   the sign-in UI — or the original "no login" tag only when Supabase isn't configured.
+  **Update 2026-09-15**: the dropdown gained a real focus trap and focus restoration on
+  close (Escape/close button) — neither existed before; see WORK_LOG.md's Task 6 entry.
 - [x] Source cells (github/linkedin/resume/instagram) are never hidden now — a real
   behavior change from Section 14's implementation, which hid Instagram outright when
   the kill switch was off. Per-cell state (`open`/`locked`/`disabled`) computed from
@@ -947,10 +1065,14 @@ sharing flow — route and shell only.
   caller's own rows. Paginated 25 at a time via `?cursor=` (an ISO `created_at`
   timestamp). `History.jsx` renders three states beyond signed-out-locked: loading,
   real error, empty (`Saved 0`, distinct copy), and populated with a `load more` row.
+  **Update 2026-09-15**: `DELETE /api/history?id=` added (per-roast delete, owner-only
+  via the same RLS-scoped client) — see Section 3's privacy-note item and WORK_LOG.md.
 - [x] Consolidated the `html, body, #root { zoom: 97% }` compounding-zoom rule (see
   Section 13's finding — actual effective scale ≈91.27%, not 97%) onto `#root` alone at
   the honest already-compounded value, since this session's CSS rewrite touched that
-  rule anyway. Visual result unchanged; the three-nested-ancestor form is gone.
+  rule anyway. Visual result unchanged; the three-nested-ancestor form is gone. (The
+  underlying "should this actually be 97%" question is still open — see the top of this
+  file.)
 - [x] Verification: 120/120 tests (5 new in `api/history.test.js`), lint/build clean,
   confirmed `SUPABASE_SERVICE_ROLE_KEY` still absent from the built bundle. Manually
   clicked through every route, both auth states, the locked/disabled source prompts, the
@@ -958,7 +1080,10 @@ sharing flow — route and shell only.
   breakpoint (via an injected same-origin iframe — `resize_window` didn't actually
   resize the viewport in this environment). No console errors.
 
-## 16. /history: row contrast + short-list gap fix (2026-09-15)
+</details>
+
+<details>
+<summary><strong>16. /history: row contrast + short-list gap fix</strong> (2026-09-15) — presentation only; mobile-only severity-chip rule later re-verified live (see note below)</summary>
 
 Goal: apply an updated design handoff for `/history` — the same v3 handoff files, edited
 in place with two reworked areas (row type hierarchy, and a dedicated fix for the
@@ -974,7 +1099,10 @@ auth touched.
   new mid-brightness tokens (`--ink-row-2` `#9a9992`, `--ink-row-3` `#7c7e81`) added to
   `src/index.css`, extending the token system rather than hardcoding. `--ink-2`/`--ink-3`
   are now documented gutter-label-only per the handoff, never row content. Severity
-  became a bordered chip (`justify-self: start`).
+  became a bordered chip (`justify-self: start`). **Update 2026-09-15 (same day, later
+  session)**: both row-content tokens (and the rest of the `--ink*` scale) were lifted
+  further for readability — see WORK_LOG.md's Task 0 entry for the before/after values
+  and contrast ratios.
 - [x] Short-list gap fixed with the handoff's own mechanism: a closing `NEXT`/`EMPTY`
   panel below the list, `flex: 1` + `min-height: 260px`, inside a flex-column route root
   (`.history-page`). Closes the gap for one, two, or three roasts; a long list just lets
@@ -985,7 +1113,10 @@ auth touched.
   than assumed).
 - [x] Two copy strings adapted before shipping (same principle as an earlier session):
   the handoff's Next/Empty body mentions delete and re-run/open, neither of which exists
-  yet. Kept the accurate first sentence in each case, dropped the rest.
+  yet. Kept the accurate first sentence in each case, dropped the rest. **Update
+  2026-09-15**: per-roast delete is real now (Section 3's privacy-note item) — the
+  "delete any roast from your history" claim on `/privacy` is backed by an actual control
+  on each row here.
 - [x] Row clicks confirmed (not implemented, per instruction): the handoff routes an
   entire row to `/r/:slug` on click; still nothing to route to until the sharing task
   ships real slugs.
@@ -996,7 +1127,10 @@ auth touched.
   that this logged their actual session out). Mobile checked for header/hero/locked-panel
   via an injected iframe; the signed-in row's mobile-only rule (severity chip drops its
   border at ≤600px) was added per spec but not re-verified live, to avoid a second
-  sign-out/sign-in cycle on the real account.
+  sign-out/sign-in cycle on the real account. **Resolved 2026-09-15 (same day, later
+  session)**: Task 1's full mobile audit re-verified `/history` at this exact breakpoint
+  and found a related real bug in the same area (persona/severity/date collapsing onto
+  one line instead of stacking) — fixed; see WORK_LOG.md.
 
 ### Also this session: adopted the Git workflow from CLAUDE.md for the first time
 The working tree had ~32 files of uncommitted work (Sections 14 and 15, both already
@@ -1006,3 +1140,43 @@ user chose to stash it, create `dev` from clean `main`, then pop the stash onto 
 only way `/history` could exist to work on). Committed the stashed work as two commits
 matching the existing WORK_LOG entries (auth/persistence, then routing/redesign) before
 starting this task's own new work, and pushed `dev` to origin.
+
+</details>
+
+<details>
+<summary><strong>17. GYM_TASKS.md unsupervised session</strong> (2026-09-15) — contrast lift, mobile audit, privacy page + delete controls, Sentry, og:image, accessibility pass, test coverage; see WORK_LOG.md for full detail</summary>
+
+A batch of 8 numbered tasks run unsupervised in one session while the user was away —
+full narrative for each lives in `WORK_LOG.md`'s 2026-09-15 entries, not duplicated here.
+One-line summary per task, in the order they ran:
+
+- **Task 0 — ink token contrast lift**: raised all six `--ink*` tokens for readability,
+  reported before/after hex + WCAG ratios, kept the muted identity and relative ordering.
+- **Task 1 — mobile compatibility audit**: genuine narrow-viewport testing (an iframe
+  with a real `window.innerWidth`, since `resize_window` still doesn't actually resize
+  the viewport here). Found and fixed: touch targets silently shrunk below 44px by the
+  root zoom, five sub-11px text tokens, history rows not stacking per-field at ≤600px,
+  and the sign-in dropdown rendering side-by-side with its trigger at ≤600px.
+- **Task 2 — `/privacy` page + real delete controls**: per-roast delete (`DELETE
+  /api/history?id=`) and account delete (`DELETE /api/account`, cascades via the
+  existing `on delete cascade` FK) built *before* the privacy page shipped, since the
+  page's own copy promised both.
+- **Task 4 — Sentry scaffolding**: `api/_lib/sentry.js`, off entirely until `SENTRY_DSN`
+  is set (still unset — no project created), wired alongside every existing
+  `console.error` under `api/`.
+- **Task 5 — og:image**: a real generated 1200×630 PNG (`scripts/generate-og-image.mjs`,
+  committed and regenerable), replacing the removed-but-never-replaced reference from
+  Section 8/2.
+- **Task 6 — accessibility pass**: full contrast audit (numbers reported, `--ink-4`
+  found dead and removed, one hardcoded hex tokenized), a real focus-visibility bug
+  fixed (the fixes-checklist checkbox's `opacity: 0` was hiding its own focus outline),
+  and a focus trap + focus restoration added to the sign-in dropdown.
+- **Task 7 — test coverage**: vitest widened to cover `src/**/*.test.js` too (previously
+  API-only). `describeError`/`sourceState`/upload-handling logic extracted to `src/lib/`
+  (component files can only export components, or Vite Fast Refresh breaks) and tested;
+  extended the history-pagination and rate-limit-tier-isolation backend suites.
+- Tasks 3 (delete controls) and 8 (this documentation sweep) are covered under Tasks 2
+  and this section respectively — see `GYM_TASKS.md` itself for the exact task list and
+  the end-of-session four-point report.
+
+</details>

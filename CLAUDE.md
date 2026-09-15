@@ -81,7 +81,7 @@ specifically want lint feedback there.
 streaming, and prompt/fencing concerns live in `api/_lib/`; see "Module layout" below for the full
 map. It was ~935 lines holding four unrelated concerns before that split; it's ~310 now.
 
-1. Frontend (`src/App.jsx`) collects `url`/`type`/`severity`/`model` via `InputForm`, calls
+1. Frontend (`src/routes/Roaster.jsx`) collects `url`/`type`/`severity`/`model` via `InputForm`, calls
    `getRoast()` in `src/lib/openai.js`, which POSTs to `/api/roast`.
 2. CORS preflight (`OPTIONS`) is handled first via `api/_lib/cors.js` — see "CORS" below for the
    allowlist.
@@ -142,7 +142,7 @@ map. It was ~935 lines holding four unrelated concerns before that split; it's ~
    resolves to `DEFAULT_MODEL_KEY` — the handler calls this (not `resolveModelOption` directly) with
    `process.env.NODE_ENV`, so a modified client can't select GPT-4o (or anything else) in production
    no matter what it sends. `InputForm.jsx`'s model picker only renders when `import.meta.env.DEV` is
-   true, and `App.jsx` doesn't send a `model` field at all when it's hidden — but that's UX, not the
+   true, and `Roaster.jsx` doesn't send a `model` field at all when it's hidden — but that's UX, not the
    boundary; the server-side check is what actually enforces this.
    **`buildCompletionParams(modelOption, systemPrompt, userMessageContent)`** builds the actual
    `chat.completions.create()` call params, and deliberately differs per provider: Groq's gpt-oss
@@ -180,7 +180,7 @@ map. It was ~935 lines holding four unrelated concerns before that split; it's ~
 7. Every response — success, error JSON, or `error`/`complete` SSE frame — includes
    `rateLimit: { limit, remaining, reset }`. A successful `complete` event also includes `modelUsed`
    (the selected model's display label, dev-only display — see "Model selection" above) and `persona`
-   (the resolved persona id, e.g. `"cynic"` — always shown, it's a real production feature). `App.jsx`
+   (the resolved persona id, e.g. `"cynic"` — always shown, it's a real production feature). `Roaster.jsx`
    resolves it to a display name (`personaName()`) for the Output section's meta row; `RoastCard.jsx`
    shows `modelUsed` only in dev, appended to the "Roast" gutter label. See "Error handling" below for
    what happens on any failure — there is no canned fallback roast anymore; every failure path is a
@@ -226,7 +226,7 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
      `LLM_PARSE_FAILURE`, `LLM_INVALID_FORMAT`) — headers are already committed at this point, so these
      send an `event: error` SSE frame with the envelope instead of a fake `complete` event. The client
      (`src/lib/openai.js`'s `consumeRoastStream`) throws on an `error` frame the same way it would on a
-     rejected fetch, so `App.jsx` handles both through one `catch` block.
+     rejected fetch, so `Roaster.jsx` handles both through one `catch` block.
 - **Logging**: `logFailure(err, { type, model, persona, buffer })` (a private helper in `api/roast.js`
   — it's tightly coupled to the handler's own catch sites, not a reusable concern like the scrapers or
   streaming were) writes one `JSON.stringify`'d line per failure with `code`/`type`/`model`/`persona`/
@@ -235,9 +235,12 @@ envelope shape shared by JSON responses and SSE `error` frames alike:
   `LLM_INVALID_FORMAT` additionally get `bufferPreview` (the raw model output, truncated to 2000
   chars) — this is the real-world signal for how often prompt-only JSON enforcement (see "Model
   selection" above) actually fails; grep logs for those two codes if reliability needs re-checking.
-- **Client**: `retryable` flows through `App.jsx`'s `describeError()` into the Output error state's
+  Also reports to Sentry alongside the console log (`captureError`, `api/_lib/sentry.js` — see
+  "Error tracking" below), tagged with `code`/`type`/`model`/`persona` only, never `bufferPreview`.
+- **Client**: `retryable` flows through `describeError()` (`src/lib/roasterErrors.js`, called from
+  `Roaster.jsx`) into the Output error state's
   `error.retryable` — a `true` value renders a "try again" button (`RoastCard.jsx`, calls `onRetry`,
-  which `App.jsx` wires straight to `handleSubmit`); `false` omits the button entirely, per the
+  which `Roaster.jsx` wires straight to `handleSubmit`); `false` omits the button entirely, per the
   design's own instruction ("where nothing can be retried, omit the button; the detail line carries
   the resolution"). Rate-limit errors (429) are deliberately `retryable: false` even though the
   request would eventually succeed — retrying immediately would just 429 again, and the error's own
@@ -300,7 +303,7 @@ valid for a straight profile roast) needs no second enforcement pass added later
 The client mirrors the registry manually rather than cross-importing across the frontend/backend
 boundary — `src/lib/personas.js` exports a small `PERSONAS` array (`{ value, name, tagline }`) used
 by `InputForm.jsx`'s persona picker (always visible, unlike the dev-only model picker) and by
-`App.jsx` to resolve the id `RoastCard.jsx` receives in the `complete` event into a display name. This
+`Roaster.jsx` to resolve the id `RoastCard.jsx` receives in the `complete` event into a display name. This
 follows the same pattern `InputForm.jsx`'s `models` array already used for `MODEL_OPTIONS`.
 
 `scripts/eval-models.mjs`'s model-comparison loop uses the default persona (cynic) for every model,
@@ -353,22 +356,28 @@ Every piece here degrades to "everyone is anonymous" when Supabase env vars are 
   `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` — both are safe to expose to the browser
   (RLS, not secrecy of the anon key, is what protects data; see the migration below).
   `isSupabaseConfigured` is `false` (and `supabase` is `null`) when either is missing;
-  `App.jsx` and `InputForm.jsx` both check it before rendering any sign-in UI, so a
-  fork with no Supabase project just never shows one.
-- **Session state** lives in `App.jsx` alongside everything else (`useState` + a
-  `supabase.auth.onAuthStateChange` subscription in a `useEffect`) — no state library,
+  `Layout.jsx` checks it before rendering any sign-in UI (falling back to the static "no
+  login" tag), so a fork with no Supabase project just never shows one. `InputForm.jsx`
+  doesn't check it directly — it receives `signedIn` as a plain prop from `Roaster.jsx`,
+  which reads `session` off the outlet context `Layout.jsx` provides.
+- **Session state** lives in `Layout.jsx`, not `App.jsx` (which is just the route table
+  now — see "Routing and page structure" below): `useState` + a
+  `supabase.auth.onAuthStateChange` subscription in a `useEffect` — no state library,
   same as the rest of the app. `signIn(provider)` calls `supabase.auth.signInWithOAuth`
   (redirects to GitHub/Google and back); `signOut()` calls `supabase.auth.signOut()`.
-  The header (previously a static "no login / free" tag pair) now renders sign-in/sign-
-  out controls in the same monospace-caps/hard-rule/zero-radius language as everything
-  else (`.hmeta-action` in `src/index.css`, a button-reset sharing `.hmeta-item`'s
-  layout) — or the original "no login" tag when Supabase isn't configured at all.
+  Every route reads `session`/`signIn`/`signOut`/`openSignIn` via `useOutletContext()`
+  rather than prop-drilling. The header renders sign-in (a dropdown panel, GitHub/
+  Google)/sign-out controls in the same monospace-caps/hard-rule/zero-radius language as
+  everything else, or the original static "no login" tag when Supabase isn't configured
+  at all.
 - **Server-side verification** (`api/_lib/auth.js`): `getAuthenticatedUser(req)` reads
   the `Authorization: Bearer <jwt>` header and calls `supabaseAdmin.auth.getUser(token)`
   — validated against Supabase Auth itself, never decoded/trusted locally. Returns
   `{ id, email }` or `null` (never a client-sent id) for a missing header, invalid/
-  expired token, or unconfigured Supabase. `getRoast()`/`getRateLimitStatus()`
-  (`src/lib/openai.js`) attach this header whenever `App.jsx` has a session; the server
+  expired token, or unconfigured Supabase. `getRoast()`/`getRateLimitStatus()`/
+  `getHistory()`/`deleteRoast()`/`deleteAccount()` (`src/lib/openai.js`) attach this
+  header whenever the caller has a session (`Roaster.jsx`, `History.jsx`, `Privacy.jsx`
+  each pass their own `session?.access_token` down from the outlet context); the server
   never receives or trusts a user id from the request body.
 - **Admin client** (`api/_lib/supabaseAdmin.js`): a lazily-built, memoized client using
   `SUPABASE_SERVICE_ROLE_KEY` (server-only — no `VITE_` prefix, so Vite never inlines it
@@ -406,21 +415,36 @@ Every piece here degrades to "everyone is anonymous" when Supabase env vars are 
   reads as "here's what you're missing," which hiding it can't — it only changes tag and
   clicking it opens an inline prompt (sign-in buttons for "locked", an explanatory note
   with no buttons for "disabled") instead of selecting it.
-- **History endpoint** (`api/history.js`, `GET`, added for the `/history` route — see
+- **History endpoint** (`api/history.js`, added for the `/history` route — see
   "Routing and page structure" below): rejects a missing/invalid JWT with
   `SIGN_IN_REQUIRED` (401, reusing the same error code as the Instagram gate — same
-  underlying "sign in for this" semantics). Otherwise queries `roasts` through
-  `api/_lib/supabaseUser.js`'s `getSupabaseClientForUser(token)` — a per-request client
-  built from the anon key plus the caller's own JWT as the `Authorization` header, not
-  the service-role admin client — so the query runs *as that user* and it's Postgres RLS
-  itself (the migration's "read own roasts" policy), not application code, that actually
-  restricts the result to their rows. Paginated 25 at a time via an optional `?cursor=`
-  query param (an ISO `created_at` timestamp — `.lt("created_at", cursor)`), returning
-  `{ roasts, nextCursor }` (`nextCursor` is `null` once a page comes back short). See
-  `api/history.test.js` — the JWT-rejection paths are real code-path tests; "only the
-  caller's rows" is asserted as "queries via a client scoped to exactly this caller's
-  token, never any other," since RLS itself (the actual guarantee) isn't something a
-  unit test can exercise without a live Supabase project.
+  underlying "sign in for this" semantics), for both methods below. Otherwise queries
+  `roasts` through `api/_lib/supabaseUser.js`'s `getSupabaseClientForUser(token)` — a
+  per-request client built from the anon key plus the caller's own JWT as the
+  `Authorization` header, not the service-role admin client — so the query runs *as that
+  user* and it's Postgres RLS itself (the migration's "read own"/"delete own" policies),
+  not application code, that actually restricts which rows this caller can touch.
+  - `GET`: paginated 25 at a time via an optional `?cursor=` query param (an ISO
+    `created_at` timestamp — `.lt("created_at", cursor)`), returning
+    `{ roasts, nextCursor }` (`nextCursor` is `null` once a page comes back short).
+  - `DELETE ?id=`: hard-deletes one roast. `id` is the only client-supplied value —
+    *which* row, never *whose*; RLS's "delete own" policy is what actually enforces
+    ownership. A missing id is `MISSING_INPUT` (400); a 0-row match (wrong id, or
+    someone else's row — deliberately indistinguishable, so the response never leaks
+    which) is `ROAST_NOT_FOUND` (404).
+  See `api/history.test.js` — the JWT-rejection paths are real code-path tests; "only
+  the caller's rows" is asserted as "queries/deletes via a client scoped to exactly this
+  caller's token, never any other," since RLS itself (the actual guarantee) isn't
+  something a unit test can exercise without a live Supabase project.
+- **Account deletion** (`api/account.js`, `DELETE`): same JWT-verification gate, then
+  `supabaseAdmin.auth.admin.deleteUser(user.id)` via the service-role client — deleting
+  an `auth.users` row isn't something RLS/the anon key can do at all. `user.id` only
+  ever comes from the verified JWT. The `roasts.user_id` foreign key is `on delete
+  cascade` (see the migration below), so every roast attached to the account is removed
+  by Postgres itself in the same operation, not a second manual delete step that could
+  fail out of sync with the account deletion. Surfaced on the `/privacy` page (see
+  "Routing and page structure") behind its own explicit confirm step, never a native
+  `confirm()`.
 
 ### Rate limiting & caching
 `api/_lib/rateLimit.js` exports `createRedisClient()` (shared by rate limiting and scrape caching),
@@ -446,7 +470,7 @@ network they're on, and anonymous/signed-in use on the same device never shares 
   same as the existing fail-open case when Upstash itself is unreachable — no new response shape.
   `api/rate-limit-status.js` returns `{ limit: null, remaining: null, reset: null, unlimited: true }`
   instead of a real (or fake) count, so the frontend isn't left displaying a stale/misleading number
-  — `App.jsx` checks `rateLimitStatus.unlimited` first and renders "rate limit bypassed (dev)" rather
+  — `Roaster.jsx` checks `rateLimitStatus.unlimited` first and renders "rate limit bypassed (dev)" rather
   than falling into its cooldown-message branches. See the "rate limit dev bypass" describe blocks in
   `api/roast.test.js` / `api/rate-limit-status.test.js`.
 - `api/_lib/scrapeCache.js`'s `withScrapeCache` also fails open on any Redis error (read or write) —
@@ -463,10 +487,10 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
 **Component boundaries match the design's own file-mapping table**, not an ad-hoc split:
 
 - `src/main.jsx` wraps `<App>` in a `<BrowserRouter>`. `src/App.jsx` is now just the route table —
-  three routes (`/`, `/history`, `/r/:slug`), all nested under one `<Route element={<Layout />}>` so
+  four routes (`/`, `/history`, `/r/:slug`, `/privacy`), all nested under one `<Route element={<Layout />}>` so
   they share one header/footer shell with no other nested layouts. `vercel.json`'s rewrites list a
-  catch-all (`/(.*) → /index.html`) after the existing `/api/(.*)` one, so a direct hit on `/history`
-  or `/r/:slug` in production is served the SPA shell instead of 404ing — Vercel only falls through to
+  catch-all (`/(.*) → /index.html`) after the existing `/api/(.*)` one, so a direct hit on `/history`,
+  `/r/:slug`, or `/privacy` in production is served the SPA shell instead of 404ing — Vercel only falls through to
   a rewrite when no matching static file exists, so this doesn't shadow real asset requests.
 - `src/routes/Layout.jsx` owns the state every route needs — `session` (a plain `useState` fed by a
   `supabase.auth.onAuthStateChange` subscription, see "Auth & persistence" above; no auth state
@@ -560,39 +584,69 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   the next page). Rows show `type`/`identifier`/`persona`/`severity`/`created_at` from
   `api/history.js` — `identifier` renders `—` for `linkedin`/`resume` rows, which have none (see
   "Auth & persistence" above: raw pasted/PDF text is never persisted). Rows don't link anywhere yet —
-  there's no real `/r/:slug` behind them until the sharing task ships real slugs.
+  there's no real `/r/:slug` behind them until the sharing task ships real slugs. Each row has its own
+  `delete` control (absolutely positioned, so it doesn't need a 5th grid column) that swaps the row for
+  an inline "Delete this roast? This can't be undone." confirm bar — never a native `confirm()` — and
+  only calls `deleteRoast()` (`src/lib/openai.js`, `DELETE /api/history?id=`) on the second click,
+  removing the row from local state on success.
 - `src/routes/SharedRoast.jsx` (route `/r/:slug`) — shell only, per this task's explicit scope (no
   slug generation, no visibility logic, no sharing flow). Reads `:slug` via `useParams()` but has
   nothing to fetch it against yet, so it renders an honest "not shareable yet" invitation row instead
   of the design's sample roast content, plus the same growth-loop CTA (`roast me instead →`, `3 free a
   day · no account needed`) the finished page will keep once real roasts land here.
+- `src/routes/Privacy.jsx` (route `/privacy`, linked from the footer) — the privacy copy, close to
+  verbatim from the source doc. Its "Deleting your data" section points at `/history`'s own per-row
+  delete control for roasts, and hosts account deletion directly: a trigger button that expands into
+  the same confirm-bar pattern as `History.jsx`'s rows (reusing its button classes), calling
+  `deleteAccount()` only past that second click, then signing out and navigating home. Signed-out
+  visitors get a "Sign in" link wired to the header's existing `openSignIn` (from the outlet context)
+  rather than a duplicate provider picker on this page too.
 - `src/lib/personas.js` — unchanged: frontend mirror of `api/_lib/prompts/personas.js`'s registry.
 - `src/lib/openai.js` — `getRoast`/`getRateLimitStatus` unchanged (still take an optional
   `accessToken` that becomes an `Authorization: Bearer` header via the shared `authHeaders()` helper).
-  New: `getHistory(accessToken, cursor)` against `GET /api/history` — `cursor`, when given, is the
-  previous page's `nextCursor` (an ISO `created_at` timestamp) from `api/history.js`. Throws the same
-  envelope-derived `Error` shape as `getRoast` on a non-2xx response.
+  `getHistory(accessToken, cursor)` against `GET /api/history` — `cursor`, when given, is the
+  previous page's `nextCursor` (an ISO `created_at` timestamp) from `api/history.js`.
+  `deleteRoast(accessToken, id)` (`DELETE /api/history?id=`) and `deleteAccount(accessToken)`
+  (`DELETE /api/account`) round out the CRUD surface. All four throw the same envelope-derived `Error`
+  shape on a non-2xx response.
+- `src/lib/roasterErrors.js` / `src/lib/inputFormHelpers.js` — pure logic pulled out of `Roaster.jsx`
+  (`describeError`, `formatCountdown`) and `InputForm.jsx` (`sourceState`, the upload
+  classification/failure-message functions) specifically so each has real test coverage
+  (`*.test.js` colocated alongside them) without breaking Vite Fast Refresh — a component file that
+  also exports plain functions trips `react-refresh/only-export-components`. `Roaster.jsx`/
+  `InputForm.jsx` now import these back in and export only their component.
 
 **Styling.** Same convention as the v2 redesign: plain CSS classes with real `@media` queries, all in
 `src/index.css` (the one global stylesheet — no CSS-in-JS, no second Tailwind config; Tailwind stays
 for small incidental utilities like the visually-hidden-checkbox technique). Class names still follow
 the handoff's own `data-r="x"` → `.x` naming crib. Colors are CSS custom properties in `:root` —
-`--ground` through `--ground-5`, `--accent`/`--accent-dk`, `--ink` through `--ink-4`, `--rule`/
-`--rule-2` — unchanged token values from v2 to v3 (confirmed against the v3 handoff's own "Tokens
-(unchanged)" note). Do **not** hardcode a new hex value inline; add or reuse a token instead. The one
-deliberate exception is `RoastCard.jsx`'s `handleSaveAsImage()`, which passes a literal hex
-(`#0a0a0a`, matching `--ground-2`) to `html2canvas`'s `backgroundColor` option — that value becomes a
-canvas `fillStyle`, which doesn't resolve CSS custom properties, so it can't reference a token and
-must be kept in sync by hand. Breakpoints are still 1180 / 900 / 600 / 380px with the same character
-per level (type-only / columns collapse / gutter collapses and the header stacks to three bands /
-small corrections) — see the v3 handoff's own README (not part of this repo) for the exact values if
-tuning further. The `html, body, #root { zoom: 97% }` rule from the v2/v3 handoffs is **not**
-reproduced as written: applying the same `zoom` declaration to three nested ancestors compounds
-multiplicatively (0.97³ ≈ 91.27%, confirmed by direct measurement — see `WORK_LOG.md`'s 2026-08-23
-entry), so it's consolidated onto `#root` alone at that already-compounded value — same visual
-result, honest CSS. That value is a `--root-zoom` custom property (not a bare literal) because the
-sticky-footer fix above also needs to compensate for it. Elements the v3 redesign removed outright
-(and that no longer have CSS or markup
+`--ground` through `--ground-5`, `--accent`/`--accent-dk`/`--accent-lt` (the last one is `a:hover`'s
+color, tokenized 2026-09-15 — was a hardcoded hex before), `--ink`/`--ink-2`/`--ink-3` (`--ink-4` was
+removed 2026-09-15: declared but never actually applied anywhere — the struck-through fix-list text it
+was meant for uses `--ink-3`), `--ink-row-2`/`--ink-row-3` (history row content — deliberately
+brighter than the `--ink-2`/`--ink-3` chrome tier, never used for chrome), `--rule`/`--rule-2`. The
+`--ink*` scale was lifted for readability 2026-09-15 (see `WORK_LOG.md`'s Task 0 entry for the exact
+before/after hex values and WCAG contrast ratios) — same hue/saturation per token, only lightness
+raised, so the muted identity and the relative ordering both held; `--accent`/`--rule*` were
+deliberately left untouched in that pass. `--touch-44`/`--touch-48` (also added 2026-09-15) compensate
+touch-target `min-height`s for `#root`'s `zoom` the same way `--root-zoom` compensates `.app-root`'s
+own height below — a plain `min-height: 44px` inside the zoomed subtree measures ~40px to a real
+finger, confirmed by direct measurement in a genuinely narrow viewport, not assumed. Do **not**
+hardcode a new hex value inline; add or reuse a token instead. The one deliberate exception is
+`RoastCard.jsx`'s `handleSaveAsImage()`, which passes a literal hex (`#0a0a0a`, matching `--ground-2`)
+to `html2canvas`'s `backgroundColor` option — that value becomes a canvas `fillStyle`, which doesn't
+resolve CSS custom properties, so it can't reference a token and must be kept in sync by hand.
+Breakpoints are still 1180 / 900 / 600 / 380px with the same character per level (type-only / columns
+collapse / gutter collapses and the header stacks to three bands / small corrections) — see the v3
+handoff's own README (not part of this repo) for the exact values if tuning further; whether these
+nominal values should themselves be corrected for the zoom-compounding effect below is a decision
+still open in `ROASTIFY_TASKS.md`. The `html, body, #root { zoom: 97% }` rule from the v2/v3 handoffs
+is **not** reproduced as written: applying the same `zoom` declaration to three nested ancestors
+compounds multiplicatively (0.97³ ≈ 91.27%, confirmed by direct measurement — see `WORK_LOG.md`'s
+2026-08-23 entry), so it's consolidated onto `#root` alone at that already-compounded value — same
+visual result, honest CSS. That value is a `--root-zoom` custom property (not a bare literal) because
+the sticky-footer fix above (and the touch-target tokens above) also need to compensate for it.
+Elements the v3 redesign removed outright (and that no longer have CSS or markup
 anywhere in this repo): the hero's "what it reads" side panel, the "how it works" 3-step strip, index
 numbers on source/persona cells, the streaming character counter and its spacer rule, the rate-limit
 tick meter, and the `cmd + enter` hint.
@@ -601,6 +655,15 @@ tick meter, and the `cmd + enter` hint.
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining
 Apify-scraped type; `linkedin` no longer scrapes) plus the LLM call (Groq in production; see "Model
 selection" above) has to fit inside that window, which is why the Apify poll budget is kept short.
+
+### Error tracking
+`api/_lib/sentry.js` wraps `@sentry/node`, gated entirely on `SENTRY_DSN` — `isSentryConfigured()`
+and `captureError(err, tags)` both no-op (no network call, no client built) when it's absent, which it
+is by default (no Sentry project exists yet). Wired alongside every existing `console.error` under
+`api/` (never replacing one), tagged with metadata only (`code`/`type`/`model`/`persona`) — never
+scraped profile content, resume text, roast text, or an email address; see "Error handling" above for
+`logFailure()`'s own Sentry call and why it deliberately never forwards `bufferPreview`. See the
+README's "Error tracking" section for how to actually turn this on.
 
 ### Model eval harness
 `scripts/eval-models.mjs` (not part of the deployed app — run manually, never in CI) compares the

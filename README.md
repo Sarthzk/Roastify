@@ -48,11 +48,12 @@ Instagram, and every roast you generate is saved to **`/history`**. Every roast 
 persisted either way, signed in or not — an anonymous one just isn't attributed to
 anyone or listed anywhere.
 
-Roastify has three routes: `/` (the roaster), `/history` (your own past roasts, signed
+Roastify has four routes: `/` (the roaster), `/history` (your own past roasts, signed
 in only — a signed-out visit gets an explanation and a sign-in prompt, never a redirect
-or a dead link), and `/r/:slug` (a single shared roast — route and page shell exist, but
-there's no way to actually generate a shareable link yet; that's a separate, later
-feature).
+or a dead link — each roast has its own delete control), `/r/:slug` (a single shared
+roast — route and page shell exist, but there's no way to actually generate a shareable
+link yet; that's a separate, later feature), and `/privacy` (what's collected, where it
+goes, and how to delete a roast or your whole account).
 
 Sign-in is entirely optional infrastructure: with `VITE_SUPABASE_URL` /
 `VITE_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` unset, the whole app runs
@@ -98,6 +99,8 @@ Copy `.env.example` to `.env` and fill in:
 | `GROQ_API_KEY` | every roast — the pinned production model (GPT-OSS 120B) | https://console.groq.com/keys (free tier, no credit card) |
 | `APIFY_API_TOKEN` | Instagram scraping only | https://console.apify.com/account/integrations |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | rate limiting + scrape caching | a Redis database at https://console.upstash.com/ |
+| `INSTAGRAM_ENABLED` | optional — set to `false` to turn Instagram off server-side and hide it in the UI, no deploy required | n/a — your own kill switch |
+| `NODE_ENV` | optional — set to `development` to unlock the dev-only GPT-4o comparison option and skip the Upstash rate-limit check locally | n/a |
 | `OPENAI_API_KEY` | optional, dev-only — the GPT-4o comparison option (`NODE_ENV=development`) | https://platform.openai.com/api-keys |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | optional — sign-in + roast history (see "Sign in and roast history" above) | your Supabase project's Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | optional, server-only — required alongside the two above for sign-in to work | same place, "service_role" key |

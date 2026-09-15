@@ -8,6 +8,55 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Documentation sweep (GYM_TASKS.md Task 8)
+**`ROASTIFY_TASKS.md`** was 1008 lines, almost entirely a resolved historical record —
+restructured per instruction: a short "Open" section at the very top (readable in under
+a minute — a decision still needed on the zoom-compounding question from Section 13,
+four items genuinely blocked on the user's own accounts/dashboards, two still-open
+feature ideas, one still-owed live prompt-injection check), then all 18 historical
+sections below it wrapped in `<details>` (collapsed by default on GitHub) so the archive
+stays reachable without burying the open items under it. While restructuring, updated
+several items that this session's own earlier tasks resolved but the file hadn't caught
+up to yet: Sentry (Task 4), the privacy note + real delete controls (Task 2), the mobile
+breakpoint re-verification and the `/history` mobile-only severity-chip rule (Task 1),
+and confirmed the Supabase migration — flagged in Section 14 as "a follow-up step for
+the user" — has in fact been applied (Section 16 already shows real signed-in roasts
+against the user's own account, and today's delete work built directly on the RLS
+policy that migration created).
+
+**`CLAUDE.md`** had a real, non-trivial staleness gap, not just missing-the-new-stuff:
+the "Auth & persistence" section still described the pre-routing architecture (`App.jsx`
+owning session state, calling `getRoast`/`getRateLimitStatus` directly) from before the
+v3 routing split (Section 15) moved session into `Layout.jsx` and the roast call into
+`Roaster.jsx` — nine separate `App.jsx` references across the file were wrong by the
+time of this sweep, apparently never caught in the sessions between the routing split
+and now. Fixed all of them, plus:
+- `--ink-4` was still listed in the "Styling" section's token list — removed (see Task
+  6's WORK_LOG entry for why it was dead) — and the section now documents `--accent-lt`,
+  `--touch-44`/`--touch-48`, and the Task 0 contrast lift, none of which existed when
+  "Styling" was last written.
+- Added the `/privacy` route, the `DELETE` methods on `api/history.js` and the new
+  `api/account.js`, the `src/lib/roasterErrors.js`/`inputFormHelpers.js` extraction (and
+  why — `react-refresh/only-export-components`, not just tidiness), and a new "Error
+  tracking" section for `api/_lib/sentry.js`.
+
+**`README.md`** — every var in `.env.example` is now actually listed (it wasn't:
+`INSTAGRAM_ENABLED` and `NODE_ENV` were real, used, documented-in-prose vars with no row
+in the env var table) and every var in the table is genuinely used (confirmed by
+grepping `process.env.*`/`import.meta.env.*` across `api/`, `index.js`, `scripts/`, and
+`src/` and diffing against the table). Two vars used in code turned out undocumented
+anywhere — `SUPABASE_URL` (an unused non-`VITE_`-prefixed fallback name in
+`supabaseAdmin.js`) and `VITE_OPENAI_API_KEY` (a fallback for `OPENAI_API_KEY`, already
+mentioned in `CLAUDE.md` but not in `.env.example` itself) — noted inline in
+`.env.example` as fallbacks rather than promoted to their own README rows, since neither
+is the recommended way to set anything. Also fixed a broken cross-reference in
+`.env.example` ("see CLAUDE.md's 'Auth & data' section" — that section is named "Auth &
+persistence"), added `SENTRY_DSN` to the table with a new "Error tracking" section
+below the Checks section, and updated the route count (three → four, `/privacy` added)
+and the `/history` line to mention its new delete control.
+
+Lint, tests (156), and build clean — this was a docs-only pass, no code touched.
+
 ### Test coverage gaps (GYM_TASKS.md Task 7)
 Frontend had zero tests; vitest's `include` only covered `api/**/*.test.js` (see
 `vite.config.js`). Widened it to `src/**/*.test.js` too — `environment` stays `'node'`
