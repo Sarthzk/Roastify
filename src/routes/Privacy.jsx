@@ -71,12 +71,19 @@ export default function Privacy() {
         <div className="privacy-body">
           <p className="privacy-copy">
             Scraped profile data is cached briefly to avoid re-fetching the same profile — one hour for
-            GitHub, 24 hours for Instagram. After that it is gone.
+            GitHub, 24 hours for Instagram. After that it is gone from the cache.
           </p>
           <p className="privacy-copy">
             Roasts are stored: the source, the text, the tips, and which voice and severity you picked. If
             you are signed in, they are attached to your account and shown in your history. If you are not,
             they are stored without any identifier.
+          </p>
+          <p className="privacy-copy">
+            For GitHub and Instagram roasts specifically, the scraped profile data is also stored alongside
+            the roast — this is what lets you keep chatting with the same voice afterward and have it
+            reference real specifics (your actual repos, bio, captions) instead of just the roast text. It
+            is deleted automatically after 30 days, and deleted immediately if you delete the roast or your
+            account.
           </p>
         </div>
       </section>

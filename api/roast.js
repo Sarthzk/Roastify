@@ -31,6 +31,12 @@ export const MODEL_OPTIONS = {
 };
 export const DEFAULT_MODEL_KEY = "gpt-oss-120b";
 
+// Caps scraped/pasted profile text before it's sent to the model — controls token cost
+// and reduces prompt-injection surface. Exported so api/_lib/prompts/chat.js can reuse
+// the exact same number when it re-truncates stored profile data for a chat system
+// prompt, instead of a second hardcoded 4000 that could quietly drift from this one.
+export const MAX_INPUT_LENGTH = 4000;
+
 export function resolveModelOption(modelKey) {
   return MODEL_OPTIONS[modelKey] || MODEL_OPTIONS[DEFAULT_MODEL_KEY];
 }
@@ -216,6 +222,14 @@ export default async function handler(req, res) {
   // persistRoast() below); null for linkedin/resume, which have no natural identifier
   // and whose raw pasted/PDF-extracted text is deliberately never persisted (no PII).
   let identifier = null;
+  // The truncated scraped text, captured below for github/instagram only — this is what
+  // persistRoast() stores alongside the roast so chat can reference profile specifics
+  // later (api/messages.js reads it back as `roasts.profile_data`). Stays null for
+  // linkedin/resume: that text comes from an uploaded document, and the privacy page
+  // promises "uploaded files are never stored" — only the roast the model writes about
+  // it is. persistRoast() itself also gates on `type`, so this isn't the only guard, but
+  // it's cheaper to just never populate it for the wrong type in the first place.
+  let scrapedProfileDataForStorage = null;
   try {
     profileData = url;
 
@@ -239,10 +253,14 @@ export default async function handler(req, res) {
 
     // Cap input length to control token cost, THEN fence it — truncating after fencing
     // would risk cutting off the closing <<<END_PROFILE_DATA_...>>> marker.
-    const MAX_INPUT_LENGTH = 4000;
     if (typeof userMessageContent === "string" && userMessageContent.length > MAX_INPUT_LENGTH) {
       userMessageContent = userMessageContent.slice(0, MAX_INPUT_LENGTH);
     }
+
+    if (type === "github" || type === "instagram") {
+      scrapedProfileDataForStorage = userMessageContent;
+    }
+
     userMessageContent = fenceUntrustedContent(userMessageContent);
   } catch (e) {
     // Scrape failures happen before we've committed to a response format (no SSE headers
@@ -349,6 +367,7 @@ export default async function handler(req, res) {
       model: modelOption.label,
       roast: parsed.roast,
       tips: parsed.tips,
+      profileData: scrapedProfileDataForStorage,
     });
 
     sendSseEvent(res, "complete", {

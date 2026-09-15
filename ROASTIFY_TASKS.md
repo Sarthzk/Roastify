@@ -49,12 +49,18 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
   coverage, but nobody has actually run a live model call against a real scraped bio
   containing an injection attempt to confirm the model genuinely ignores it rather than
   just trusting the prompt instruction in the abstract. Still owed.
-- **Chat frontend** (Section 18, 2026-09-16). The backend (`api/conversations.js`,
+- **Chat frontend** (Sections 18-19, 2026-09-16/17). The backend (`api/conversations.js`,
   `api/messages.js`) is done, tested, and documented — fully exercisable by curl (see
-  README's "Chat (backend only)" section). No UI yet; wire it up once the parallel design
-  pass for it lands. The migration (`supabase/migrations/20260916000000_conversations_and_messages.sql`)
-  also still needs to actually be applied to any real Supabase project running this app —
-  same manual step the 2026-09-12 roasts/reports migration needed (see Section 14).
+  README's "Chat (backend only)" section), including github/instagram roasts now handing
+  chat real profile-data context (Section 19). No UI yet; wire it up once the parallel
+  design pass for it lands. Both migrations
+  (`supabase/migrations/20260916000000_conversations_and_messages.sql` and
+  `supabase/migrations/20260917000000_roasts_profile_data.sql`) also still need to
+  actually be applied to any real Supabase project running this app — same manual step
+  the 2026-09-12 roasts/reports migration needed (see Section 14). The purge cron
+  (`api/cron/purge-expired-profile-data.js`, `vercel.json`'s `crons` entry) needs
+  `CRON_SECRET` set in production to be properly secured — works without it, but accepts
+  any caller until it's set (see `.env.example`).
 
 ---
 
@@ -1248,5 +1254,50 @@ design).
   of those first), anonymous rejection, and a roast/conversation belonging to another user
   being refused. All mocked (Supabase, OpenAI) — no live calls. 188 tests total, lint and
   build clean.
+
+</details>
+
+<details>
+<summary><strong>19. Chat gets access to scraped profile data (github/instagram only)</strong> (2026-09-17) — roasts table extended, 30-day retention with a real purge cron, two chat base-fragment variants, privacy page updated</summary>
+
+Chat previously only ever saw the roast text — this closes the gap so it can answer
+"what about my other repos?" with a real answer instead of an invented one, for the two
+source types where storing the scraped profile is actually fine. Full design writeup in
+`CLAUDE.md`'s "Chat" section ("Profile data for chat"); this entry is a compressed
+summary.
+
+- **Deliberate asymmetry**: GitHub/Instagram profiles are public and low-PII, so storing
+  them is fine. LinkedIn/resume come from an uploaded document (name, employer,
+  sometimes phone/address) and the privacy page promises uploaded files are never
+  stored — that stays true; chat for those two keeps working from the roast text alone,
+  exactly as it did before this task. Commented at every enforcement point so it isn't
+  "fixed" later.
+- **Schema**: extended `roasts` rather than a join table (`supabase/migrations/20260917000000_roasts_profile_data.sql`)
+  — `profile_data`/`profile_data_expires_at`, plus CHECK constraints enforcing the
+  type restriction and the null/non-null pairing at the schema level too. Verified, not
+  assumed, that the existing `roasts.user_id on delete cascade` already covers the new
+  columns — no schema change needed for account deletion to still work.
+- **Storage enforcement**: `persistRoast.js`'s `STORABLE_PROFILE_DATA_TYPES` set is the
+  real gate, independent of what `api/roast.js` passes — a future caller mistake can't
+  quietly start storing linkedin/resume text. `MAX_INPUT_LENGTH` (the existing scraped-
+  content cap) was exported from `api/roast.js` and reused rather than a second
+  hardcoded `4000`.
+- **Retention, for real**: `api/messages.js` falls back to roast-only context (never an
+  error) once `profile_data_expires_at` has passed, independent of cron timing. Actual
+  deletion — so it doesn't just sit there, ignored — is a new scheduled endpoint,
+  `api/cron/purge-expired-profile-data.js`, on Vercel's daily Cron Jobs (`vercel.json`),
+  secured by an optional `CRON_SECRET`.
+- **Chat prompt**: two base fragments now (`CHAT_BASE_FRAGMENT_WITH_PROFILE` /
+  `_NO_PROFILE`), chosen by whether usable profile data exists for this turn;
+  `getChatSystemPrompt()` fences profile data the same way it already fenced the roast.
+- **Privacy page**: a new paragraph under "What we keep" documents this — stored,
+  30-day expiry, deleted immediately with the roast or account. The "uploaded files are
+  never stored" promise is untouched.
+- **Tests**: 27 new/rewritten (`api/_lib/persistRoast.test.js`,
+  `api/cron/purge-expired-profile-data.test.js`, new describe blocks in
+  `api/_lib/prompts/chat.test.js` and `api/messages.test.js`) — storage gating in both
+  directions, expiry fallback without erroring, fencing, and base-fragment selection. 215
+  tests total, lint and build clean. Both migrations written, neither applied — left for
+  the user to run.
 
 </details>

@@ -65,9 +65,14 @@ beyond not having an account tier to opt into.
 A signed-in user can continue a conversation in the same persona voice that produced one
 of their roasts — the persona is locked at creation and can't be changed mid-conversation.
 This is backend-only for now (no UI yet — see `CLAUDE.md`'s "Chat" section), so it's
-built to be fully exercised by curl. The model only ever sees the roast text/tips it
-already generated, never the original scraped profile or resume — Roastify doesn't store
-that, so a chat reply can't reference details the roast itself didn't mention.
+built to be fully exercised by curl.
+
+For GitHub and Instagram roasts, the model also gets the scraped profile data alongside
+the roast text/tips — so "what about my other repos?" gets a real answer instead of an
+invented one — for 30 days after the roast, after which it's treated as gone and chat
+falls back to the roast alone. LinkedIn and resume roasts never get this: that text comes
+from an uploaded document, and the privacy page promises uploaded files are never
+stored — chat for those two always works from the roast text alone, same as before.
 
 ```sh
 TOKEN="<a real Supabase access_token — see below>"
@@ -93,6 +98,12 @@ curl -s http://localhost:3001/api/conversations?id=$CONVERSATION_ID \
 # 4. Delete it (cascades to its messages).
 curl -s -X DELETE http://localhost:3001/api/conversations?id=$CONVERSATION_ID \
   -H "Authorization: Bearer $TOKEN" | jq .
+
+# 5. (Optional) Trigger the profile-data purge job manually — normally runs on Vercel's
+#    own daily cron schedule (vercel.json). Only meaningful once some profile_data has
+#    actually aged past its 30-day retention window; a fresh roast won't be touched.
+curl -s http://localhost:3001/api/cron/purge-expired-profile-data \
+  -H "Authorization: Bearer $CRON_SECRET" | jq .
 ```
 
 `$TOKEN` needs to be a real Supabase `access_token` for a signed-in user — the quickest
@@ -154,6 +165,7 @@ Copy `.env.example` to `.env` and fill in:
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | optional — sign-in + roast history (see "Sign in and roast history" above) | your Supabase project's Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | optional, server-only — required alongside the two above for sign-in to work | same place, "service_role" key |
 | `SENTRY_DSN` | optional, server-only — error tracking (see "Error tracking" below) | your Sentry project's Settings → Client Keys (DSN) |
+| `CRON_SECRET` | optional, server-only — secures the scheduled job that purges expired chat profile data (see "Chat (backend only)" above) | any random string you choose |
 
 GitHub, LinkedIn, and resume roasts all work without the Apify token or Upstash
 credentials — Apify is only needed for Instagram now (LinkedIn moved to PDF

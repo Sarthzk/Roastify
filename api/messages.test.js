@@ -102,7 +102,9 @@ function fakeStream(textChunks) {
 }
 
 const { default: handler, CHAT_CONTEXT_MESSAGE_LIMIT } = await import("./messages.js");
+const { MAX_INPUT_LENGTH } = await import("./roast.js");
 const { PERSONAS } = await import("./_lib/prompts/personas.js");
+const { CHAT_BASE_FRAGMENT_WITH_PROFILE, CHAT_BASE_FRAGMENT_NO_PROFILE } = await import("./_lib/prompts/fragments.js");
 
 function createMockRes() {
   return {
@@ -155,7 +157,10 @@ function resetAllMocks() {
   conversationSelectMock.mockReset();
   conversationSelectMock.mockReturnValue({ data: { id: "conv-1", persona: "cynic", roast_id: "roast-1" }, error: null });
   roastSelectMock.mockReset();
-  roastSelectMock.mockReturnValue({ data: { roast: "You are pathetic.", tips: ["Fix your bio."] }, error: null });
+  roastSelectMock.mockReturnValue({
+    data: { roast: "You are pathetic.", tips: ["Fix your bio."], profile_data: null, profile_data_expires_at: null },
+    error: null,
+  });
   historySelectMock.mockReset();
   historySelectMock.mockReturnValue({ data: [], error: null });
   persistChatTurnMock.mockReset();
@@ -223,6 +228,99 @@ describe("POST /api/messages", () => {
     const systemMessage = params.messages.find((m) => m.role === "system").content;
     expect(systemMessage).toContain(PERSONAS.recruiter.promptFragment);
     expect(systemMessage).not.toContain(PERSONAS["desi-uncle"].promptFragment);
+  });
+
+  it("includes fresh (non-expired) profile data in the system prompt, fenced, and picks the with-profile base fragment", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1" });
+    const futureExpiry = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    roastSelectMock.mockReturnValue({
+      data: {
+        roast: "You are pathetic.",
+        tips: ["Fix your bio."],
+        profile_data: "GitHub Profile: octocat\nTop 10 repositories:\n1. Hello-World",
+        profile_data_expires_at: futureExpiry,
+      },
+      error: null,
+    });
+    createCompletionMock.mockResolvedValue(fakeStream(["ok"]));
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token", body: { conversationId: "conv-1", content: "what about my other repos?" } }), res);
+
+    const params = createCompletionMock.mock.calls[0][0];
+    const systemMessage = params.messages.find((m) => m.role === "system").content;
+    expect(systemMessage).toContain(CHAT_BASE_FRAGMENT_WITH_PROFILE);
+    expect(systemMessage).not.toContain(CHAT_BASE_FRAGMENT_NO_PROFILE);
+    expect(systemMessage).toContain("GitHub Profile: octocat\nTop 10 repositories:\n1. Hello-World");
+    // Fenced, not dropped in raw — two independent fenced blocks (roast, profile data).
+    const fenceOpenings = systemMessage.match(/<<<PROFILE_DATA_[0-9a-f]+>>>/g) || [];
+    expect(fenceOpenings.length).toBe(2);
+  });
+
+  it("falls back to roast-only context (no-profile fragment) for an expired roast, without erroring", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1" });
+    const pastExpiry = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    roastSelectMock.mockReturnValue({
+      data: {
+        roast: "You are pathetic.",
+        tips: ["Fix your bio."],
+        profile_data: "GitHub Profile: octocat",
+        profile_data_expires_at: pastExpiry,
+      },
+      error: null,
+    });
+    createCompletionMock.mockResolvedValue(fakeStream(["ok"]));
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token", body: { conversationId: "conv-1", content: "what about my other repos?" } }), res);
+
+    expect(res.statusCode).toBe(200); // headers already committed via SSE — never a 500
+    const events = parseSseEvents(res);
+    expect(events.find((e) => e.event === "error")).toBeUndefined();
+    const params = createCompletionMock.mock.calls[0][0];
+    const systemMessage = params.messages.find((m) => m.role === "system").content;
+    expect(systemMessage).toContain(CHAT_BASE_FRAGMENT_NO_PROFILE);
+    expect(systemMessage).not.toContain("GitHub Profile: octocat");
+  });
+
+  it("falls back to roast-only context for a linkedin/resume roast, which never has profile_data at all", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1" });
+    roastSelectMock.mockReturnValue({
+      data: { roast: "You are pathetic.", tips: ["Fix your bio."], profile_data: null, profile_data_expires_at: null },
+      error: null,
+    });
+    createCompletionMock.mockResolvedValue(fakeStream(["ok"]));
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token", body: { conversationId: "conv-1", content: "hi" } }), res);
+
+    const params = createCompletionMock.mock.calls[0][0];
+    const systemMessage = params.messages.find((m) => m.role === "system").content;
+    expect(systemMessage).toContain(CHAT_BASE_FRAGMENT_NO_PROFILE);
+  });
+
+  it("truncates profile data to MAX_INPUT_LENGTH before it reaches the model", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1" });
+    const oversized = "a".repeat(MAX_INPUT_LENGTH + 500);
+    roastSelectMock.mockReturnValue({
+      data: {
+        roast: "You are pathetic.",
+        tips: [],
+        profile_data: oversized,
+        profile_data_expires_at: new Date(Date.now() + 10000).toISOString(),
+      },
+      error: null,
+    });
+    createCompletionMock.mockResolvedValue(fakeStream(["ok"]));
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer real-user-token", body: { conversationId: "conv-1", content: "hi" } }), res);
+
+    const params = createCompletionMock.mock.calls[0][0];
+    const systemMessage = params.messages.find((m) => m.role === "system").content;
+    const fencedProfileBlock = systemMessage.match(/<<<PROFILE_DATA_([0-9a-f]+)>>>\n(a+)\n<<<END_PROFILE_DATA_\1>>>/);
+    expect(fencedProfileBlock).not.toBeNull();
+    expect(fencedProfileBlock[2].length).toBe(MAX_INPUT_LENGTH);
   });
 
   it("caps the context sent to the model at CHAT_CONTEXT_MESSAGE_LIMIT prior messages, oldest of the kept ones first", async () => {

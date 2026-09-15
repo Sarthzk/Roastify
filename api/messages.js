@@ -5,7 +5,7 @@ import { getAuthenticatedUser, extractBearerToken } from "./_lib/auth.js";
 import { getSupabaseClientForUser } from "./_lib/supabaseUser.js";
 import { getChatSystemPrompt } from "./_lib/prompts/chat.js";
 import { getRequiredApiKey, getClient } from "./_lib/modelClient.js";
-import { resolveModelOption, DEFAULT_MODEL_KEY } from "./roast.js";
+import { resolveModelOption, DEFAULT_MODEL_KEY, MAX_INPUT_LENGTH } from "./roast.js";
 import { persistChatTurn } from "./_lib/persistChatTurn.js";
 import { sendSseEvent } from "./_lib/streaming.js";
 import { reportError } from "./_lib/sentry.js";
@@ -152,7 +152,7 @@ export default async function handler(req, res) {
 
   const { data: roast, error: roastError } = await client
     .from("roasts")
-    .select("roast, tips")
+    .select("roast, tips, profile_data, profile_data_expires_at")
     .eq("id", conversation.roast_id)
     .maybeSingle();
 
@@ -165,6 +165,18 @@ export default async function handler(req, res) {
     logFailure(err, { conversationId, model: modelOption.model });
     return res.status(err.status).json({ ...toErrorEnvelope(err), rateLimit: rateLimitInfo });
   }
+
+  // profile_data is only ever set for github/instagram roasts (persistRoast.js enforces
+  // this at write time) and only for PROFILE_DATA_RETENTION_DAYS — an expired or never-
+  // stored roast (linkedin, resume) falls back to roast-only context, not an error;
+  // getChatSystemPrompt() picks the right base fragment for either case. Re-truncated to
+  // MAX_INPUT_LENGTH here — it was already capped once at write time (see
+  // persistRoast.js), this is defense in depth against that invariant ever drifting, and
+  // reuses the exact same number rather than a second hardcoded one (see api/roast.js).
+  const profileDataExpired =
+    roast.profile_data_expires_at && new Date(roast.profile_data_expires_at).getTime() <= Date.now();
+  const profileData =
+    roast.profile_data && !profileDataExpired ? String(roast.profile_data).slice(0, MAX_INPUT_LENGTH) : null;
 
   const { data: history, error: historyError } = await client
     .from("messages")
@@ -187,7 +199,7 @@ export default async function handler(req, res) {
   // getChatSystemPrompt() always uses conversation.persona — the id this conversation
   // was locked to at creation, never anything from req.body — so there is no client-
   // supplied persona field for this endpoint to even read, let alone honor.
-  const systemPrompt = getChatSystemPrompt(conversation.persona, roast.roast, roast.tips);
+  const systemPrompt = getChatSystemPrompt(conversation.persona, roast.roast, roast.tips, profileData);
   const contextMessages = [
     ...history
       .slice()

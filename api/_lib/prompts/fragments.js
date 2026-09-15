@@ -35,11 +35,22 @@ export const SEVERITY_FRAGMENTS = {
   "destroy me": "INTENSITY: Go absolutely savage. No mercy. Brutal honesty, maximum roast energy.",
 };
 
-// The base fragment for chat mode (./chat.js's getChatSystemPrompt), composed instead of
-// BASE_FRAGMENT above — chat has no JSON output contract and no scraped profile in hand,
-// just the roast already generated. Deliberately tells the model what it does NOT have,
-// since without this it will happily hallucinate details about a profile it never saw.
-export const CHAT_BASE_FRAGMENT = `You are continuing a conversation with someone Roastify already roasted, staying in the same voice as that roast. You do not have their GitHub/LinkedIn/Instagram profile or resume — Roastify never stores the scraped profile or resume text, only the roast it generated. Your only knowledge of this person is the roast and tips below; work from those, don't invent specifics you can't see, and if asked about something the roast never covered, say so honestly instead of pretending to know it.
+// Two base fragments for chat mode (./chat.js's getChatSystemPrompt), composed instead of
+// BASE_FRAGMENT above — chat has no JSON output contract, just a locked persona and the
+// roast (and sometimes profile data) already produced. Which variant is used depends on
+// whether stored profile data is actually available for this conversation (see
+// getChatSystemPrompt) — GitHub/Instagram roasts store the scraped profile alongside the
+// roast (api/_lib/persistRoast.js) so chat can reference real specifics from it, but
+// LinkedIn/resume roasts never do (that text comes from an uploaded document, and the
+// privacy page promises it's never stored), and even a stored GitHub/Instagram profile
+// expires after PROFILE_DATA_RETENTION_DAYS. Either way the model needs to be told
+// explicitly what it does and doesn't have — without that it will happily hallucinate
+// details about a profile it never saw.
+export const CHAT_BASE_FRAGMENT_WITH_PROFILE = `You are continuing a conversation with someone Roastify already roasted, staying in the same voice as that roast. Below you have both the roast/tips already given AND their scraped profile data — use real specifics from the profile data when they're relevant (actual repo names, bio text, follower counts, captions, whatever it actually contains), not just the roast's summary of it. Don't invent anything beyond what the roast, tips, or profile data actually say; if asked about something none of those cover, say so honestly instead of pretending to know it.
+
+Reply in plain conversational text, not JSON — this is a back-and-forth chat, not a roast-generation call.`;
+
+export const CHAT_BASE_FRAGMENT_NO_PROFILE = `You are continuing a conversation with someone Roastify already roasted, staying in the same voice as that roast. You do not have their profile or resume for this conversation — either it was never stored (LinkedIn and resume roasts never store the uploaded document's text) or the stored profile data has expired. Your only knowledge of this person is the roast and tips below; work from those, don't invent specifics you can't see, and if asked about something the roast never covered, say so honestly instead of pretending to know it.
 
 Reply in plain conversational text, not JSON — this is a back-and-forth chat, not a roast-generation call.`;
 

@@ -390,16 +390,21 @@ Every piece here degrades to "everyone is anonymous" when Supabase env vars are 
   there's no INSERT policy for anon/authenticated). `user_id` is always the id
   `getAuthenticatedUser()` derived, or `null` for an anonymous request — every roast is
   stored either way (anonymous rows are analytics-only: not attributed, not listed in
-  anyone's history), never the raw scraped/pasted profile text (no PII, same principle
-  as `logFailure()`'s no-PII logging rule above). Fails open on any write error, same
-  fail-open posture as `withScrapeCache` — persistence is a product feature, not a
-  correctness requirement for the roast the caller already received.
+  anyone's history). The raw scraped/pasted profile text itself is stored only for
+  github/instagram, and only for a limited retention window — see "Chat" below's
+  "Profile data for chat" for the full reasoning and enforcement; it is never stored for
+  linkedin/resume (that text comes from an uploaded document, and the privacy page's
+  "uploaded files are never stored" promise covers it), and it's never logged either way
+  (no PII, same principle as `logFailure()`'s no-PII logging rule above). Fails open on
+  any write error, same fail-open posture as `withScrapeCache` — persistence is a product
+  feature, not a correctness requirement for the roast the caller already received.
 - **Schema** (`supabase/migrations/`): real SQL migration files, not an ORM or runtime
   table creation. `roasts` (`user_id` nullable, `type`, `identifier`, `persona`,
   `severity`, `model`, `roast`, `tips` jsonb, plus `visibility`/`slug` — nullable and
   unused today, added now so a future public-share-page feature is additive rather than
-  a schema rewrite) and `reports` (for moderating shared content later — schema only,
-  no application code touches it yet). RLS is enabled on both from row one: a user can
+  a schema rewrite; `profile_data`/`profile_data_expires_at` — nullable, added
+  2026-09-17, see "Chat" below) and `reports` (for moderating shared content later —
+  schema only, no application code touches it yet). RLS is enabled on both from row one: a user can
   `select`/`delete` only rows where `auth.uid() = user_id` (which is never true for an
   anonymous row via the anon key, by construction — no special-cased policy needed);
   there is deliberately no INSERT policy for anon/authenticated on either table, since
@@ -536,20 +541,67 @@ extracted out of `api/roast.js` so both endpoints build the same Groq/OpenAI cli
 instead of duplicating the key-selection logic — a pure mechanical move, no behavior change (still
 covered by `api/roast.test.js`'s existing `openai` mock).
 
-**System prompt.** `api/_lib/prompts/chat.js`'s `getChatSystemPrompt(personaId, roast, tips)` is a
-separate composer from `getSystemPrompt()` (`api/_lib/prompts/index.js`), not an extra branch on it —
-chat has no output contract, no profile type, no severity dial, only a locked persona voice and the
-roast already produced. Composes `[CHAT_BASE_FRAGMENT, persona.promptFragment, <fenced roast + tips>,
-UNTRUSTED_DATA_NOTICE]` — the persona fragment and the notice are the exact same fragments
-`getSystemPrompt()` uses, reused rather than duplicated. `CHAT_BASE_FRAGMENT`
-(`api/_lib/prompts/fragments.js`) is new: it explicitly tells the model it does NOT have the scraped
-profile or resume text — Roastify never stores that, only the roast output (`roasts.roast`/`.tips` —
-see "Auth & persistence" above), so the model's only knowledge of the person is what the roast already
-said. Without this the model will happily hallucinate profile details it never saw; this is what keeps
-the privacy page's "we don't store your scraped profile" claim honest even in a multi-turn chat. The
-roast text is model output derived from attacker-controlled scraped/pasted input, so it gets the same
+**System prompt.** `api/_lib/prompts/chat.js`'s `getChatSystemPrompt(personaId, roast, tips, profileData)`
+is a separate composer from `getSystemPrompt()` (`api/_lib/prompts/index.js`), not an extra branch on
+it — chat has no output contract, no profile type, no severity dial, only a locked persona voice, the
+roast already produced, and — when available (see "Profile data for chat" below) — the scraped profile
+data alongside it. Two base fragments (`api/_lib/prompts/fragments.js`), chosen by whether `profileData`
+is truthy: `CHAT_BASE_FRAGMENT_WITH_PROFILE` (tells the model it can reference real specifics — actual
+repo names, bio text, follower counts, captions — from the profile data, not just the roast's summary
+of it) or `CHAT_BASE_FRAGMENT_NO_PROFILE` (tells the model it has neither — either this is a
+linkedin/resume roast, which never stores that text, or a github/instagram roast whose stored profile
+data has expired — and to say so honestly rather than invent details). Either way the model needs to be
+told explicitly what it does and doesn't have, or it will happily hallucinate; this is what keeps the
+privacy page's "uploaded files are never stored" promise honest across a multi-turn chat too. Composes
+`[<chosen base fragment>, persona.promptFragment, <fenced roast + tips>, <fenced profile data, if
+present>, UNTRUSTED_DATA_NOTICE]` — persona and the notice are the exact same fragments
+`getSystemPrompt()` uses, reused rather than duplicated. Both the roast and the profile data are
+scrape/model output derived from attacker-controlled input, so both get the same
 `fenceUntrustedContent()` treatment scraped profile data gets in `api/roast.js` — never dropped into
-the prompt raw (see "Prompt injection defense" above).
+the prompt raw (see "Prompt injection defense" above). `getChatSystemPrompt()` itself does no
+truncation or expiry logic — same division of responsibility as `getSystemPrompt()`, which never
+truncates `userMessageContent` either; that's the calling handler's job (see below).
+
+**Profile data for chat.** Added 2026-09-17 so chat can answer "what about my other repos?" instead of
+inventing an answer — before this, chat only ever saw the roast text. GitHub and Instagram profiles are
+already public and low-PII, so storing them is fine; LinkedIn and resume come from an uploaded document
+(full name, employer, sometimes phone/address) and the privacy page promises "uploaded files are never
+stored. The PDF stays in your browser" — that promise has to stay true, so those two never get profile
+data stored, chat included. This asymmetry is deliberate and commented at every enforcement point so it
+doesn't get "fixed" later.
+- **Storage**: `supabase/migrations/20260917000000_roasts_profile_data.sql` extends `roasts` (not a
+  join table — `profile_data` has a strict 1:1 relationship with a roast, is already small/capped, and
+  needs exactly the same ownership/RLS/cascade-delete behavior the roasts row already has; a join table
+  would just duplicate that) with `profile_data` and `profile_data_expires_at`, plus two CHECK
+  constraints: `profile_data` can only be non-null when `type in ('github', 'instagram')`, and the two
+  columns are always null/non-null together. `api/roast.js` captures the same truncated (see
+  `MAX_INPUT_LENGTH`, now exported) scraped text it already sends the roast model, only for
+  `type === "github" || type === "instagram"`, into `scrapedProfileDataForStorage`, and passes it to
+  `persistRoast()`. `api/_lib/persistRoast.js`'s `STORABLE_PROFILE_DATA_TYPES` set is the real
+  enforcement point, independent of the caller: it silently drops `profileData` for any other type no
+  matter what's passed, so `api/roast.js` being careful isn't the only thing stopping linkedin/resume
+  text from being stored — belt and suspenders with the schema's own CHECK constraint. It also computes
+  `profile_data_expires_at` as `now() + PROFILE_DATA_RETENTION_DAYS` (exported, `30`) whenever it stores
+  data, `null` otherwise. `api/_lib/persistRoast.test.js` asserts both directions directly: stored (with
+  a future expiry) for github/instagram, never stored for linkedin/resume even when a caller passes one.
+- **Retention & fallback**: `api/messages.js` treats `profile_data` as absent once
+  `profile_data_expires_at` has passed — falls back to roast-only context via
+  `CHAT_BASE_FRAGMENT_NO_PROFILE`, never an error — independent of whether the purge job below has
+  actually run yet, so the fallback is correct on every request regardless of cron timing.
+- **Purge**: `api/cron/purge-expired-profile-data.js`, triggered daily by Vercel's Cron Jobs
+  (`vercel.json`'s `crons` entry, `0 3 * * *`) — nulls both columns for every row past its own expiry.
+  This is the part that actually keeps the data from sitting in storage forever; the read-time fallback
+  above only stops it from being *used*, not from existing. Secured by `CRON_SECRET` (optional): when
+  set, only a caller sending `Authorization: Bearer <CRON_SECRET>` (Vercel's own documented pattern for
+  securing a cron route — it sends this automatically once the env var exists) gets through; left
+  unset, the endpoint accepts any caller, acceptable because the query itself only ever touches
+  already-expired rows, so the worst an unauthenticated hit can do is purge data slightly early, never
+  early-privacy-window data. Account deletion needs no special handling here — `roasts.user_id`'s
+  existing `on delete cascade` already removes the whole row, `profile_data` included, same as it
+  always has; deleting a roast directly (`api/history.js`) is the same, immediate, no 30-day wait.
+- **Context size**: `api/_lib/prompts/chat.js` re-truncates profile data to `MAX_INPUT_LENGTH` even
+  though it was already capped once at write time — defense in depth against that invariant drifting,
+  and reuses the exact number `api/roast.js` exports rather than a second hardcoded `4000`.
 
 **Context window.** `api/messages.js`'s `CHAT_CONTEXT_MESSAGE_LIMIT` (exported, currently `20`) caps
 how much prior conversation gets sent back to the model on top of the new message itself (which is
@@ -559,10 +611,11 @@ Summarizing older history instead of just dropping it past the cap is a later ta
 
 **Persistence.** `api/_lib/persistChatTurn.js` inserts both halves of a turn (the user's message and
 the model's reply) via the service role key, in one call, after the reply has already streamed to the
-client — same fail-open reasoning as `persistRoast.js` (see "Auth & persistence" above): a write
-failure here must never take away a reply the caller already received. Reports failures via
-`reportError()` (always, since a Supabase insert error isn't a `RoastError` — see "Error tracking"
-below), not silently, learning from the same close call `PERSIST_ROAST_FAILURE` was named for.
+client — same fail-open reasoning as `persistRoast.js` (see "Auth & persistence" above and "Profile
+data for chat" above): a write failure here must never take away a reply the caller already received.
+Reports failures via `reportError()` (always, since a Supabase insert error isn't a `RoastError` — see
+"Error tracking" below), not silently, learning from the same close call `PERSIST_ROAST_FAILURE` was
+named for.
 
 **Rate limiting.** Its own `chat` tier (`RATE_LIMIT_TIERS.chat`, see "Rate limiting & caching" above),
 not shared with `authenticated` roasts — a chat turn is plain text completion with no scrape, so it's

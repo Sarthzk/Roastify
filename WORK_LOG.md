@@ -6,6 +6,84 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-17
+
+### Give chat access to scraped profile data (GitHub/Instagram only)
+Chat previously only ever saw the roast text, so it couldn't answer a follow-up like
+"what about my other repos?" without inventing an answer. Requested directly, with an
+explicit and deliberate asymmetry: GitHub and Instagram profiles are already public and
+low-PII, so storing them is fine; LinkedIn and resume come from an uploaded document
+(full name, employer, sometimes phone/address) and the privacy page promises "uploaded
+files are never stored. The PDF stays in your browser" — that promise has to stay true,
+so those two chats keep working from the roast text alone, unchanged. Full design
+writeup in `CLAUDE.md`'s "Chat" section, "Profile data for chat" — not duplicated here.
+
+**Schema**: `supabase/migrations/20260917000000_roasts_profile_data.sql` extends
+`roasts` (not a join table — chose this deliberately: `profile_data` is a strict 1:1
+with a roast, already small/capped, and needs exactly the ownership/RLS/cascade-delete
+behavior the roasts row already has; a join table would just duplicate that with its own
+policies and its own FK back to the same thing) with `profile_data` and
+`profile_data_expires_at`, plus two CHECK constraints — one limiting `profile_data` to
+`github`/`instagram` rows, one keeping the two columns null/non-null together. Verified
+(not assumed) that account deletion still cascades to this: `roasts.user_id`'s existing
+`on delete cascade` already covers the whole row, no schema change needed for that part.
+
+**Storage**: `api/roast.js` captures the same truncated scraped text it already sends
+the roast model (the existing `MAX_INPUT_LENGTH` cap, now exported so it isn't a second
+hardcoded number) into `scrapedProfileDataForStorage`, only for github/instagram, and
+passes it to `persistRoast()`. The real enforcement lives in `persistRoast.js` itself
+(`STORABLE_PROFILE_DATA_TYPES`), not just in `api/roast.js` being careful — a future
+change to the caller can't quietly start storing linkedin/resume text, since
+`persistRoast()` silently drops it for any type outside that set regardless of what's
+passed. It also computes `profile_data_expires_at` (30 days out — `PROFILE_DATA_RETENTION_DAYS`,
+exported) whenever it stores data. `api/_lib/persistRoast.test.js` (new) asserts both
+directions directly against the actual insert payload.
+
+**Chat context**: `api/messages.js` now selects `profile_data`/`profile_data_expires_at`
+alongside the roast, treats it as absent once the expiry has passed (falls back to
+roast-only context, never an error — this holds regardless of whether the purge job
+below has actually run yet), and re-truncates to `MAX_INPUT_LENGTH` again before passing
+it to the prompt composer (defense in depth against the write-time cap ever drifting).
+`api/_lib/prompts/chat.js`'s `getChatSystemPrompt()` gained a fourth `profileData`
+parameter and now picks one of two base fragments
+(`api/_lib/prompts/fragments.js`) — `CHAT_BASE_FRAGMENT_WITH_PROFILE` (told it can
+reference real specifics) or `CHAT_BASE_FRAGMENT_NO_PROFILE` (told it has neither the
+profile nor a reason to invent one) — and fences the profile data the same way it
+already fenced the roast, since both are scrape/model output derived from
+attacker-controlled input.
+
+**Retention — actual deletion, not just logical fallback**: the read-time fallback above
+stops expired data from being *used*, not from *existing*. `api/cron/purge-expired-profile-data.js`
+is the part that actually deletes it — a new endpoint triggered daily by Vercel's own
+Cron Jobs (`vercel.json`'s new `crons` entry, `0 3 * * *`), nulling both columns for
+every row past its own expiry. Secured by an optional `CRON_SECRET` env var, checked
+against the `Authorization: Bearer` header Vercel automatically sends once that variable
+exists (Vercel's own documented pattern for this) — left unset, the endpoint accepts any
+caller, which is an acceptable default since the query only ever touches rows already
+past their own expiry window, so the worst case is purging something slightly early,
+never early. `api/cron/purge-expired-profile-data.test.js` (new) covers both the secret
+present/absent/wrong-value cases and the purge query itself.
+
+**Privacy page**: added a paragraph to "What we keep" — GitHub/Instagram profile data is
+stored alongside the roast so chat can reference specifics, deleted automatically after
+30 days, and deleted immediately (not on the 30-day timer) if the roast or the account
+itself is deleted. The existing "Uploaded files are never stored" promise under
+"Uploads" is untouched — it was already true and still is.
+
+**Verification**: 25 new tests (`api/_lib/persistRoast.test.js`,
+`api/cron/purge-expired-profile-data.test.js`, plus new describe blocks in
+`api/_lib/prompts/chat.test.js` and `api/messages.test.js`) covering: profile data
+stored for github/instagram with a real future expiry, never stored for linkedin/resume
+even when a caller passes one, the expired-roast fallback (no error, no-profile
+fragment, real content excluded from what reaches the model), fresh profile data
+actually reaching the model fenced, and the purge endpoint's auth/query behavior.
+`chat.test.js`'s existing assertions were also rewritten for the new two-variant
+fragment/signature, not just added to. All 215 tests pass (up from 188), lint and build
+clean. Migration written, not applied — same as every prior one, left for the user to
+run.
+
+---
+
 ## 2026-09-16
 
 ### Chat backend: conversations + messages, backend only

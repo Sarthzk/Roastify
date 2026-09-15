@@ -37,6 +37,7 @@ const { default: historyHandler } = await import("./api/history.js");
 const { default: accountHandler } = await import("./api/account.js");
 const { default: conversationsHandler } = await import("./api/conversations.js");
 const { default: messagesHandler } = await import("./api/messages.js");
+const { default: purgeExpiredProfileDataHandler } = await import("./api/cron/purge-expired-profile-data.js");
 
 const port = 3001;
 
@@ -50,6 +51,7 @@ const routes = [
   { path: "/api/account", handler: accountHandler },
   { path: "/api/conversations", handler: conversationsHandler },
   { path: "/api/messages", handler: messagesHandler },
+  { path: "/api/cron/purge-expired-profile-data", handler: purgeExpiredProfileDataHandler },
 ];
 
 function sendJson(res, statusCode, payload) {
