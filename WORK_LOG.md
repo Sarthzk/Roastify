@@ -8,6 +8,33 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### og:image (GYM_TASKS.md Task 5)
+`og:image`/`twitter:image` were removed previously because they pointed at a file that
+never existed — see ROASTIFY_TASKS.md. `sharp` (confirmed installable, added as a
+devDependency — it's a one-off generation tool, not runtime app code) composes an SVG
+(black background, amber wordmark/headline mirroring the real header brand mark and the
+hero's own "Get / Roasted" treatment, a muted tagline) and rasterizes it to a real
+1200×630 `public/og-image.png` via `scripts/generate-og-image.mjs` — committed and
+regenerable (`node scripts/generate-og-image.mjs`), not a one-off artifact.
+
+One real snag worth recording: SVG text through librsvg (what `sharp` uses under the
+hood) resolves fonts against whatever's actually installed on the machine running the
+script, not a browser's CSS cascade — asking for `'Courier New', monospace` (the site's
+own `--font-family`) rendered the headline in a fallback serif here, silently, because
+this machine doesn't have anything registered under that exact name, while the wordmark
+happened to resolve to *some* monospace font — the two didn't match. Switched to `Menlo,
+'Courier New', monospace` (Menlo ships with macOS) so every text element in the image
+renders the same face consistently; regenerating on a different OS may need retuning
+that font list, which the script's own comment says explicitly.
+
+`index.html` gets `og:image`/`twitter:image` back (absolute URL, matching `og:url`'s own
+existing pattern) and `twitter:card` restored to `summary_large_image`. Colors in the
+script are copied from `src/index.css`'s tokens as of this session — a static asset, so
+it can't reference them directly, same reasoning as `RoastCard.jsx`'s one hardcoded-hex
+exception; a future contrast/palette change needs this script's constants updated by
+hand and rerun. Lint, tests (131), and build clean; confirmed the built `dist/` actually
+contains `og-image.png` (Vite copies `public/` verbatim).
+
 ### Sentry scaffolding (GYM_TASKS.md Task 4)
 Added `@sentry/node` and `api/_lib/sentry.js` — `isSentryConfigured()` (gated on
 `SENTRY_DSN`, same pattern as `isSupabaseConfigured()`/`isInstagramEnabled()`) and
