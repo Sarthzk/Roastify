@@ -481,17 +481,22 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   (added/removed in a `useEffect` gated on `signInOpen`, this one legitimately needs to be an effect
   since it subscribes to `document`, an external system). When `isSupabaseConfigured` is false (see
   "Auth & persistence" above), the whole nav/auth block is replaced by the original static `no login`
-  tag — there's nothing to route or sign into differently. `.app-root` (the header/`<Outlet>`/footer
-  wrapper) has no `min-height`, and `.footer` has no `margin-top: auto` — the footer sits flush after
-  whatever the current route renders, on every route, rather than pinning to the bottom of a forced
-  full-viewport box. An earlier version of this forced `.app-root` to `min-height: 100vh`, matching a
-  design handoff's own root-wrapper markup — but on a route shorter than the viewport (an idle
-  roaster on a tall screen, a short `/history` list, `/r/:slug`) that left a dead gap between content
-  and the footer, which turned out to matter more than the handoff fidelity once it showed up on real,
-  variable-length content rather than the handoff's own always-populated demo data. `html`/`body`/
-  `#root`'s own `min-height: 100%` (see "Layout shell" in `src/index.css`) still paints the ground
-  color for the full viewport regardless, so a short page just ends after its footer against that same
-  background rather than showing a mismatched gap.
+  tag — there's nothing to route or sign into differently. `<Outlet>` renders inside a `<main
+  className="app-main">`, giving every route the standard sticky footer: `.app-root` is
+  `min-height: 100dvh` (compensated for `#root`'s `zoom`, see below) and `display: flex;
+  flex-direction: column`, and `.app-main` is the `flex: 1` child — not the footer. On a route
+  shorter than the viewport (an idle roaster on a tall screen, a short `/history` list, `/r/:slug`)
+  `.app-main` absorbs the leftover space, so the footer sits at the true bottom of the screen with
+  plain background above it; on a route taller than the viewport `.app-main` already exceeds its
+  flex-basis on its own, so the page just scrolls normally with the footer right after content. A
+  prior version of this removed `.app-root`'s `min-height` entirely (footer flush after content,
+  empty space below it instead of above) — reverted: the actual requirement was a real sticky
+  footer that reaches the bottom of a short screen, not merely "no dead gap." `#root`'s `zoom` (a
+  `--root-zoom` custom property, see "Layout shell" in `src/index.css`) scales this whole subtree's
+  *rendered* size, so a plain `100dvh` on `.app-root` still renders about 9% short of the real
+  window — confirmed by direct measurement, not assumed, per the explicit instruction that
+  motivated this fix. `.app-root`'s `min-height` is `calc(100dvh / var(--root-zoom))` instead, which
+  renders out to exactly `100dvh` once the zoom is applied.
 - `src/routes/Roaster.jsx` (route `/`) is what `src/App.jsx` used to be minus the header/footer: owns
   `url`, `type`, `severity`, `persona`, `model`, `result`, `loading`, `error`, `rateLimitStatus`,
   `resetKey`. Deliberately kept local to this route rather than lifted into `Layout.jsx` — per the
@@ -585,7 +590,9 @@ tuning further. The `html, body, #root { zoom: 97% }` rule from the v2/v3 handof
 reproduced as written: applying the same `zoom` declaration to three nested ancestors compounds
 multiplicatively (0.97³ ≈ 91.27%, confirmed by direct measurement — see `WORK_LOG.md`'s 2026-08-23
 entry), so it's consolidated onto `#root` alone at that already-compounded value — same visual
-result, honest CSS. Elements the v3 redesign removed outright (and that no longer have CSS or markup
+result, honest CSS. That value is a `--root-zoom` custom property (not a bare literal) because the
+sticky-footer fix above also needs to compensate for it. Elements the v3 redesign removed outright
+(and that no longer have CSS or markup
 anywhere in this repo): the hero's "what it reads" side panel, the "how it works" 3-step strip, index
 numbers on source/persona cells, the streaming character counter and its spacer rule, the rate-limit
 tick meter, and the `cmd + enter` hint.

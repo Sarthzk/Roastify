@@ -113,6 +113,47 @@ appears correctly at the true end of that content once scrolled down. Signed the
 real account out again to test the signed-out case, same as last session — flagged to
 them to sign back in.
 
+### Reverted the previous entry's layout fix — it solved the wrong problem
+The previous fix removed `.app-root`'s `min-height: 100vh` entirely, so the footer sat
+flush after content with the leftover space below it instead of above. Reported as
+wrong: the actual requirement was a standard sticky footer — footer at the very bottom
+of the screen on a short page (empty space *above* it is expected and fine), footer
+right after content and scrolling normally on a tall page. Removing the min-height
+achieved the letter of "no dead gap above the footer" but not the actual goal.
+
+Reimplemented as the standard pattern: `<Outlet>` now renders inside a new `<main
+className="app-main">`; `.app-root` keeps `min-height: 100dvh` (restored) and
+`display: flex; flex-direction: column`; `.app-main`, not the footer, is the `flex: 1`
+child. This is a real reversal of the immediately preceding commit, not just a
+different route treatment.
+
+Implementing the textbook version first and measuring it (rather than trusting the CSS
+by inspection, per the explicit instruction) surfaced a real bug: `#root`'s `zoom:
+91.27%` (see the 2026-08-23 entry) scales its entire rendered subtree, so a plain
+`min-height: 100dvh` on `.app-root` — inside that zoomed subtree — rendered ~9% short of
+the actual browser window, not merely inside it. Measured directly on `/r/:slug`: footer
+bottom at 762px against an 835px real viewport, a 73px gap below the footer that would
+have shipped invisibly (same background color, easy to miss without measuring). Fixed
+by promoting the zoom value to a `--root-zoom` custom property and dividing
+`.app-root`'s declared `min-height` by it (`calc(100dvh / var(--root-zoom))`) — the
+declared height is now large enough that applying the zoom scales it back down to
+exactly 100dvh rendered. Re-measured after the fix: footer bottom at exactly 835px, 0px
+gap.
+
+Verification: 120/120 tests, lint/build clean. Checked live (still on the user's own
+account, still needed one more sign-out to test the signed-out case — flagged to them
+again): `/r/:slug` (0px gap, confirmed by direct measurement), `/history` signed in with
+a short list (0px gap) and a 27-row long list (footer follows content directly, page
+scrolls, no regression), `/history` signed out (0px gap), `/` idle on a genuinely tall
+viewport (a 1996px injected same-origin iframe, since the real window here isn't tall
+enough to exercise this on its own — footer landed at exactly 1996px, matching the
+iframe's own height exactly), and `/` with a completed roast (2190px of real content,
+footer follows it directly, no regression). Also re-checked a short (496px) viewport to
+confirm the fix doesn't affect already-scrolling pages. `.app-main` itself ended up
+needing only `flex: 1` — no `display: flex` — since it has exactly one plain block
+child; added that first out of habit matching `.app-root`'s own styling, then removed it
+once it was confirmed to do nothing.
+
 ## 2026-09-13
 
 ### v3 redesign: routing, header auth, tier-aware source states, history page

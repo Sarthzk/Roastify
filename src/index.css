@@ -29,6 +29,14 @@
   --rule-2:    #1c1e21; /* fix rows, hairlines, thin spacers */
 
   --font-family: 'Courier New', monospace;
+
+  /* #root's zoom scales its entire subtree's *rendered* size, not just its content — a
+     100dvh-based min-height declared anywhere inside it (see .app-root) resolves against
+     the real viewport but then renders at only this fraction of it (confirmed by direct
+     measurement: a plain min-height: 100dvh there rendered ~9% short of the real window,
+     not merely inside it). Kept as one shared value so the zoom itself and anything that
+     needs to compensate for it can never drift apart. */
+  --root-zoom: 0.9127;
 }
 
 html,
@@ -42,7 +50,7 @@ body {
      once — the previous three-element rule read as 97% but actually rendered at
      0.97^3 ≈ 91.27%. Consolidated onto #root alone at that same effective value, so the
      visual result is unchanged; see WORK_LOG.md for the measurement. */
-  zoom: 91.27%;
+  zoom: var(--root-zoom);
 }
 
 * {
@@ -121,19 +129,27 @@ a:hover {
 /* ===========================================================================
    Layout shell
    =========================================================================== */
-/* No min-height here — the footer must sit flush after whatever the route renders, not
-   pin to the bottom of a forced full-viewport box. A route shorter than the viewport
-   (an idle roaster on a tall screen, a short /history list, /r/:slug) previously left a
-   dead gap between its content and the footer, since min-height: 100vh forced .app-root
-   taller than its actual content and .footer's margin-top: auto then floated it down to
-   fill that forced height. html/body/#root's own min-height: 100% (src/index.css above)
-   still paints the ground color for the full viewport regardless, so a short page just
-   ends after its footer against that same background — not a mismatched gap. */
+/* Standard sticky footer, applied once here so every route gets it: the shell is at
+   least one viewport tall, and .app-main (not the footer) is the flex-grow child. On a
+   short route (an idle roaster, a short /history list, /r/:slug) main just absorbs the
+   leftover space, so the footer sits at the bottom of the screen with plain background
+   above it — expected and fine. On a route taller than the viewport, main already
+   exceeds its flex-basis on its own, so this has no effect and the page scrolls
+   normally with the footer right after content.
+   min-height is divided by --root-zoom, not a plain 100dvh: #root's zoom scales this
+   whole subtree's *rendered* size, so a plain 100dvh here still renders short of the
+   real window by that same fraction (measured directly — the footer sat ~9% of the
+   viewport above the real bottom edge). Dividing the *declared* height by the zoom
+   factor makes the *rendered* height reach exactly 100dvh, confirmed the same way. */
 .app-root {
+  min-height: calc(100dvh / var(--root-zoom));
   display: flex;
   flex-direction: column;
   background: var(--ground);
   color: var(--ink);
+}
+.app-main {
+  flex: 1;
 }
 .input-form {
   width: 100%;

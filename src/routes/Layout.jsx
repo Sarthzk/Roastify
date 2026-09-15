@@ -142,7 +142,9 @@ export default function Layout() {
         )}
       </header>
 
-      <Outlet context={{ session, signIn, signOut, openSignIn: () => setSignInOpen(true) }} />
+      <main className="app-main">
+        <Outlet context={{ session, signIn, signOut, openSignIn: () => setSignInOpen(true) }} />
+      </main>
 
       <footer className="footer">
         <div className="footer-name">Made by Sarthak Mohite</div>
