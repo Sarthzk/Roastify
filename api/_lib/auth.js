@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./supabaseAdmin.js";
+import { captureError } from "./sentry.js";
 
 // Pulls the raw JWT out of `Authorization: Bearer <jwt>`, or null for a missing/
 // malformed header or an empty token. Shared by getAuthenticatedUser() below and by
@@ -29,6 +30,7 @@ export async function getAuthenticatedUser(req) {
     return { id: data.user.id, email: data.user.email };
   } catch (err) {
     console.error("JWT verification failed:", err.message);
+    captureError(err, { code: "JWT_VERIFICATION_FAILURE" });
     return null;
   }
 }

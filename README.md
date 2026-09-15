@@ -101,6 +101,7 @@ Copy `.env.example` to `.env` and fill in:
 | `OPENAI_API_KEY` | optional, dev-only — the GPT-4o comparison option (`NODE_ENV=development`) | https://platform.openai.com/api-keys |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | optional — sign-in + roast history (see "Sign in and roast history" above) | your Supabase project's Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | optional, server-only — required alongside the two above for sign-in to work | same place, "service_role" key |
+| `SENTRY_DSN` | optional, server-only — error tracking (see "Error tracking" below) | your Sentry project's Settings → Client Keys (DSN) |
 
 GitHub, LinkedIn, and resume roasts all work without the Apify token or Upstash
 credentials — Apify is only needed for Instagram now (LinkedIn moved to PDF
@@ -119,6 +120,26 @@ npm run lint    # eslint (frontend + index.js — see CLAUDE.md for what it does
 npm test        # vitest, api/**/*.test.js
 npm run build   # production build
 ```
+
+---
+
+## Error tracking
+
+Server-side errors (`api/`) can optionally report to [Sentry](https://sentry.io) —
+`api/_lib/sentry.js`. To turn it on:
+
+1. Create a project at https://sentry.io — pick the **Node.js** platform (not Next.js or
+   the Vercel integration; this repo wires the SDK directly).
+2. Copy its DSN from the project's Settings → Client Keys, and set `SENTRY_DSN` in
+   `.env` (locally) or your deploy platform's environment variables (production).
+3. That's it — no code change needed. The very next deploy/restart starts reporting.
+
+With `SENTRY_DSN` unset (the default — no project has been created yet), Sentry is
+entirely off: no crash, no warning, no behavior change. Every failure path still logs to
+the console exactly as it always has; Sentry is additional, not a replacement. Only error
+codes, types, model names, and stack traces are ever sent — never scraped profile
+content, resume text, roast text, or email addresses (see the no-PII comment in
+`api/_lib/sentry.js` and everywhere it's called).
 
 ---
 

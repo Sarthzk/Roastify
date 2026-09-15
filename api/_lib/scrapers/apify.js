@@ -1,5 +1,6 @@
 import { fetchWithRetry } from "../fetchWithRetry.js";
 import { ERROR_CODES, RoastError } from "../errors.js";
+import { captureError } from "../sentry.js";
 
 // Poll budget kept short so scraping leaves enough of the 60s function maxDuration (see
 // vercel.json) for the LLM call that follows.
@@ -55,6 +56,14 @@ export async function runApifyScrape({
 
   if (!runId || !defaultDatasetId) {
     console.error("All actor attempts failed:", JSON.stringify(startErrors));
+    // Tags stay minimal (code + how many actor slugs were tried) rather than forwarding
+    // startErrors wholesale — those are Apify's own start-request responses, not scraped
+    // profile content, but there's no reason to widen what Sentry sees beyond what's
+    // actually useful for noticing the actor slug list needs updating.
+    captureError(new Error(startFailureMessage), {
+      code: ERROR_CODES.SCRAPE_UPSTREAM_FAILURE,
+      actorCandidateCount: actorCandidates.length,
+    });
     throw new RoastError(ERROR_CODES.SCRAPE_UPSTREAM_FAILURE, startFailureMessage, { status: 502, retryable: true });
   }
 

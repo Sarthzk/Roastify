@@ -2,6 +2,7 @@ import { handleCorsPreflight } from "./_lib/cors.js";
 import { ERROR_CODES, RoastError, toErrorEnvelope } from "./_lib/errors.js";
 import { getAuthenticatedUser, extractBearerToken } from "./_lib/auth.js";
 import { getSupabaseClientForUser } from "./_lib/supabaseUser.js";
+import { captureError } from "./_lib/sentry.js";
 
 const PAGE_SIZE = 25;
 
@@ -29,6 +30,7 @@ async function handleDelete(req, res, client) {
   if (error) {
     const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to delete roast.", { status: 500, cause: error });
     console.error(JSON.stringify({ code: err.code, message: err.message, causeMessage: error.message }));
+    captureError(err, { code: err.code });
     return res.status(err.status).json(toErrorEnvelope(err));
   }
 
@@ -82,6 +84,7 @@ export default async function handler(req, res) {
   if (error) {
     const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load history.", { status: 500, cause: error });
     console.error(JSON.stringify({ code: err.code, message: err.message, causeMessage: error.message }));
+    captureError(err, { code: err.code });
     return res.status(err.status).json(toErrorEnvelope(err));
   }
 

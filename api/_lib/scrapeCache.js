@@ -1,4 +1,5 @@
 import { createRedisClient } from "./rateLimit.js";
+import { captureError } from "./sentry.js";
 
 // Instagram goes through Apify (a billed run per scrape) and profiles change slowly, so
 // it's cached longer than GitHub, which is a free API and cheap to re-hit. LinkedIn has
@@ -30,6 +31,7 @@ export async function withScrapeCache(type, identifier, fetcher) {
     }
   } catch (err) {
     console.error("Scrape cache read failed:", err.message);
+    captureError(err, { code: "SCRAPE_CACHE_READ_FAILURE", type });
   }
 
   const result = await fetcher();
@@ -39,6 +41,7 @@ export async function withScrapeCache(type, identifier, fetcher) {
       await redis.set(key, result, { ex: CACHE_TTL_SECONDS[type] ?? DEFAULT_CACHE_TTL_SECONDS });
     } catch (err) {
       console.error("Scrape cache write failed:", err.message);
+      captureError(err, { code: "SCRAPE_CACHE_WRITE_FAILURE", type });
     }
   }
 

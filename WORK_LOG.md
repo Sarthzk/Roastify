@@ -8,6 +8,45 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Sentry scaffolding (GYM_TASKS.md Task 4)
+Added `@sentry/node` and `api/_lib/sentry.js` — `isSentryConfigured()` (gated on
+`SENTRY_DSN`, same pattern as `isSupabaseConfigured()`/`isInstagramEnabled()`) and
+`captureError(err, tags)`, which no-ops entirely when the DSN is absent (it is — no
+Sentry project exists yet) and only builds/initializes the real client lazily, the first
+time something actually reports. Verified locally: with `SENTRY_DSN` unset, hit
+`/api/rate-limit-status`, `/api/history`, and `/api/account` directly — no crash, no
+warning spam, nothing Sentry-related in the log at all.
+
+Wired `captureError` alongside every existing `console.error` under `api/` (never
+replacing the console log — kept exactly as it was, per the task's own instruction):
+`api/roast.js`'s `logFailure` (tagged with `code`/`type`/`model`/`persona`, deliberately
+never `buffer`/`bufferPreview` — that field is the one place in this codebase a
+console.error already carries real model output, and by extension scraped/pasted profile
+content) and its separate rate-limit-init catch, `api/history.js` and `api/account.js`'s
+delete-failure branches, `api/rate-limit-status.js`'s Upstash catch, `api/_lib/auth.js`'s
+JWT-verification catch, `api/_lib/scrapeCache.js`'s read/write catches, and
+`api/_lib/scrapers/apify.js`'s all-actors-failed path (tagged with a candidate count, not
+the raw per-actor error bodies — no reason to widen what Sentry sees beyond what's
+actually diagnostic).
+
+**The specific gap called out in the task**: `api/_lib/persistRoast.js` already failed
+open correctly (a broken write must never block the roast the caller already has), but
+silently — it broke once before with nobody noticing. It now reports through
+`captureError` with a distinct `PERSIST_ROAST_FAILURE` code on both its error branches
+(the query itself returning an error, and the surrounding try/catch), tagged with `type`
+only — never `roast`/`tips`/`identifier`, the actual content that call carries.
+
+Also fixed while touching `.env.example` for the new var: its Upstash comment still said
+"5 roasts/hour/IP", stale since the rate-limit tiers changed to 3/day anonymous, 15/day
+signed-in (see CLAUDE.md's "Rate limiting & caching") — a real inaccuracy Task 8's sweep
+would have hit anyway; fixed now since I was already in the file.
+
+Documented setup in the README ("Error tracking" section) and `.env.example`: create a
+Node.js-platform Sentry project, paste the DSN, no code change needed. New module tested
+(`api/_lib/sentry.test.js`, `@sentry/node` mocked — no live calls, matching the rest of
+the suite) for both the no-DSN no-op and the with-DSN init-once/report path. Lint,
+tests (131), and build clean.
+
 ### Privacy page + real per-roast/account delete (GYM_TASKS.md Task 2)
 The task's copy makes two concrete claims — "You can delete any roast from your history.
 Deleting your account removes every roast attached to it" — that had to be real before

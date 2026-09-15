@@ -2,6 +2,7 @@ import { getClientIP, createRatelimit, getRateLimitKey, RATE_LIMIT_TIERS } from 
 import { handleCorsPreflight } from "./_lib/cors.js";
 import { isInstagramEnabled } from "./_lib/config.js";
 import { getAuthenticatedUser } from "./_lib/auth.js";
+import { captureError } from "./_lib/sentry.js";
 
 export default async function handler(req, res) {
   if (handleCorsPreflight(req, res)) return;
@@ -36,6 +37,7 @@ export default async function handler(req, res) {
     res.json({ limit, remaining, reset, instagramEnabled, signedIn, tier });
   } catch (err) {
     console.error("Rate limit status check failed:", err.message);
+    captureError(err, { code: "RATE_LIMIT_STATUS_FAILURE" });
     // Fail open with an optimistic status so the UI doesn't break if Upstash is unavailable
     const max = RATE_LIMIT_TIERS[tier].max;
     res.json({ limit: max, remaining: max, reset: null, unavailable: true, instagramEnabled, signedIn, tier });
