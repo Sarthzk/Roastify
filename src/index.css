@@ -13,17 +13,20 @@
 
   --accent:    #e2b714; /* amber — brand */
   --accent-dk: #8a7420; /* selected sublabels, selected source tag, upgrade link */
-  --ink:       #d1d0c5; /* primary text */
-  --ink-2:     #646669; /* secondary text, labels — gutter labels only, never row content */
-  --ink-3:     #4a4c4f; /* tertiary — placeholders, faint labels — gutter labels only, never row content */
-  --ink-4:     #3d3f42; /* struck-through fix index */
+  /* Ink scale lifted for readability (contrast ratios against --ground, WCAG formula):
+     --ink 13.54->14.00:1, --ink-row-2 7.35->9.00:1, --ink-row-3 5.16->6.50:1,
+     --ink-2 3.65->5.50:1, --ink-3 2.44->4.00:1, --ink-4 1.99->3.00:1. Same hue/saturation
+     per token, only lightness raised, so the muted identity and the relative ordering
+     (ink > row-2 > row-3 > ink-2 > ink-3 > ink-4) both hold. See WORK_LOG.md. */
+  --ink:       #d4d3c9; /* primary text */
+  --ink-2:     #808386; /* secondary text, labels — gutter labels only, never row content */
+  --ink-3:     #696c71; /* tertiary — placeholders, faint labels — gutter labels only, never row content */
+  --ink-4:     #56595e; /* struck-through fix index */
 
   /* Added for the /history row-content hierarchy — list rows are primary page content,
-     not gutter labels, so they need their own brighter mid-tones instead of --ink-2/-3
-     (~7:1 and ~5:1 contrast on black, vs. --ink-2/-3's lower contrast meant for
-     secondary chrome). Not part of the original v2/v3 token set. */
-  --ink-row-2: #9a9992; /* history row secondary content — persona, severity chip text */
-  --ink-row-3: #7c7e81; /* history row tertiary content — source kind kicker, date */
+     not gutter labels, so they need their own brighter mid-tones instead of --ink-2/-3. */
+  --ink-row-2: #abaaa4; /* history row secondary content — persona, severity chip text */
+  --ink-row-3: #8d8f92; /* history row tertiary content — source kind kicker, date */
 
   --rule:      #2c2e31; /* 1px and 2px structural rules */
   --rule-2:    #1c1e21; /* fix rows, hairlines, thin spacers */

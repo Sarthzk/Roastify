@@ -8,6 +8,34 @@ actually done, when, and why. Updated after each work session.
 
 ## 2026-09-15
 
+### Ink token contrast lift (GYM_TASKS.md Task 0)
+Global readability fix, token-level only — no component touched. The six `--ink*` tokens
+in `src/index.css` were too dark against `--ground` (#000000): three of them failed WCAG
+AA even for large/UI text. Computed baseline ratios with the standard sRGB-linear-luminance
+formula, then found new hex values via a hue/saturation-preserving lightness search (same
+hue and saturation per token, only lightness raised) so the "muted, terminal-ish identity"
+holds and the hierarchy between levels is unchanged — every level moved up together,
+row-content tier still brighter than the chrome tier, `--ink-4` still the dimmest.
+
+| token | before | before ratio | after | after ratio |
+|---|---|---|---|---|
+| `--ink` | `#d1d0c5` | 13.54:1 | `#d4d3c9` | 14.00:1 |
+| `--ink-row-2` | `#9a9992` | 7.35:1 | `#abaaa4` | 9.00:1 |
+| `--ink-row-3` | `#7c7e81` | 5.16:1 | `#8d8f92` | 6.50:1 |
+| `--ink-2` | `#646669` | 3.65:1 | `#808386` | 5.50:1 |
+| `--ink-3` | `#4a4c4f` | 2.44:1 | `#696c71` | 4.00:1 |
+| `--ink-4` | `#3d3f42` | 1.99:1 | `#56595e` | 3.00:1 |
+
+`--accent`/`--accent-dk`/`--rule`/`--rule-2` untouched, per instruction — this was about
+text, not the palette. Verified visually (real dev servers, not just reading the CSS) on:
+the roaster idle/streaming/error/complete states, the fixes checklist, the meta row, the
+action buttons (share/save/roast-another), the header/footer, the sign-in locked panel and
+empty-history panel on `/history`, history row content (kind/handle/persona/severity/date
+— injected non-destructively via a temporary DOM node, removed after, since no real
+signed-in session exists locally), and the `/r/:slug` placeholder shell. Lint, tests (120),
+and build all clean. Left for Task 6 to do the actual accessibility-pass contrast audit
+against these new values rather than re-deriving them here.
+
 ### /history: row contrast + short-list gap, per an updated design handoff
 Full detail in `ROASTIFY_TASKS.md` Section 16; summary here. Presentation-only fix on
 `/history`, driven by a revised Claude Design handoff (the same `design_handoff_roastify_v3/`
