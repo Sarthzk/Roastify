@@ -49,15 +49,11 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
   coverage, but nobody has actually run a live model call against a real scraped bio
   containing an injection attempt to confirm the model genuinely ignores it rather than
   just trusting the prompt instruction in the abstract. Still owed.
-- **Chat frontend** (Sections 18-19, 2026-09-16/17). The backend (`api/conversations.js`,
-  `api/messages.js`) is done, tested, and documented — fully exercisable by curl (see
-  README's "Chat (backend only)" section), including github/instagram roasts now handing
-  chat real profile-data context (Section 19). No UI yet; wire it up once the parallel
-  design pass for it lands. Both migrations
+- **Chat migrations still need applying**. Both
   (`supabase/migrations/20260916000000_conversations_and_messages.sql` and
-  `supabase/migrations/20260917000000_roasts_profile_data.sql`) also still need to
-  actually be applied to any real Supabase project running this app — same manual step
-  the 2026-09-12 roasts/reports migration needed (see Section 14). The purge cron
+  `supabase/migrations/20260917000000_roasts_profile_data.sql`) still need to actually be
+  applied to any real Supabase project running this app — same manual step the
+  2026-09-12 roasts/reports migration needed (see Section 14). The purge cron
   (`api/cron/purge-expired-profile-data.js`, `vercel.json`'s `crons` entry) needs
   `CRON_SECRET` set in production to be properly secured — works without it, but accepts
   any caller until it's set (see `.env.example`).
@@ -1300,4 +1296,44 @@ summary.
   tests total, lint and build clean. Both migrations written, neither applied — left for
   the user to run.
 
+</details>
+
+<details>
+<summary><strong>20. Chat UI</strong> (2026-09-18) — /chat and /chat/:id routes, both entry points wired, mobile fixed shell, new list endpoint</summary>
+
+Wired the chat backend (Sections 18-19) to a real interface, from a Claude Design
+handoff. Full design writeup in `CLAUDE.md`'s "Chat" section's "Frontend" subsection;
+this entry is a compressed summary — see `WORK_LOG.md`'s 2026-09-18 entry for the why
+and the verification detail.
+
+- **New list endpoint**: `api/conversations.js` gained `handleList()` (paginated 25 at a
+  time, RLS-backed, dispatched off `GET` with no `?id=`) — there was no way to list a
+  caller's conversations before this. `handleGet()` (the `?id=` path) also now returns
+  the linked roast's full content, not just the conversation row.
+- **Routes**: `src/routes/ChatList.jsx` (`/chat`) and `src/routes/ChatThread.jsx`
+  (`/chat/:id`), a third `CHAT` nav item in `Layout.jsx` alongside `ROAST`/`HISTORY`, a
+  signed-out locked state on both (`src/components/ChatLockedPanel.jsx`, shared).
+- **Two entry points, both landing on `/chat/:id` directly**: a "keep talking to
+  `<persona>`" CTA on a completed roast (`RoastCard.jsx` + `Roaster.jsx`'s
+  `handleStartChat()`), and `History.jsx` rows, made clickable for the first time.
+  Neither backend action returns a roast id directly, so the roast-completion entry
+  point leans on a documented invariant (the newest row in the caller's own history)
+  rather than a new backend field.
+- **Streaming reused, not reimplemented**: `src/lib/openai.js`'s `consumeRoastStream`
+  was generalized into `consumeSseStream(res, chunkEventName, onChunk)`; `sendChatMessage`
+  uses the same function with `"message"` instead of a second SSE parser.
+- **Mobile fixed shell**: `/chat/:id` becomes a fixed-height, footer-dropped shell at the
+  existing 600px breakpoint, done entirely via the `:has()` selector off a single marker
+  class on the route's own root element — no changes to the shared `Layout.jsx`. Verified
+  at a real 376px width via a same-origin iframe + direct `getComputedStyle()`
+  inspection, not just a screenshot (`resize_window` doesn't actually resize the
+  rendered viewport in this environment).
+- **A real bug found via live testing**: a null-crash on fresh page load caused by a
+  `useState` initializer capturing a not-yet-resolved `signedIn` value — not reachable
+  from the automated test suite (`node` environment, no real async session timing).
+  Fixed at the root cause plus a defensive guard; see `WORK_LOG.md` for the full story.
+- **Tests**: 225 total (up from 215) — new `src/lib/chatHelpers.test.js` (pure logic:
+  `formatDate`, `lastMessagePreview`) plus new list-mode coverage in
+  `api/conversations.test.js`. Lint and build clean. Extended `src/index.css`'s existing
+  token system for every new color — no new hardcoded hex.
 </details>

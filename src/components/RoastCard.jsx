@@ -16,6 +16,9 @@ export default function RoastCard({
   onRetry,
   onRoastAnother,
   onSignIn,
+  onStartChat,
+  startingChat,
+  chatError,
 }) {
   const [checked, setChecked] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -206,6 +209,34 @@ get roasted at roastify.vercel.app`;
           </div>
         </section>
       </div>
+
+      <section className="row">
+        <div className="row-label">Chat</div>
+        {signedIn ? (
+          <div className="start-chat-body">
+            <button type="button" className="start-chat-cta" onClick={onStartChat} disabled={startingChat}>
+              <span>{startingChat ? "starting…" : `keep talking to ${personaName}`}</span>
+              <span>&#8594;</span>
+            </button>
+            {chatError && <p className="start-chat-error">Couldn't start that conversation — {chatError}</p>}
+          </div>
+        ) : (
+          <div className="invitation-body">
+            <div className="invitation-top">
+              <span className="invitation-icon">&#8226;</span>
+              <span className="invitation-msg">Sign in to keep talking to {personaName}.</span>
+            </div>
+            <div className="invitation-actions">
+              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
+                github
+              </button>
+              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
+                google
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="row">
         <div className="row-label" />

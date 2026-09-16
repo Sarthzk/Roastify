@@ -129,6 +129,10 @@ export default function Layout() {
             <span className="nav-item-bar" />
             roast
           </NavLink>
+          <NavLink to="/chat" className={navClass}>
+            <span className="nav-item-bar" />
+            chat
+          </NavLink>
           <NavLink to="/history" className={navClass}>
             <span className="nav-item-bar" />
             history

@@ -23,13 +23,13 @@ function errorFromEnvelope(envelope, rateLimit, fallbackMessage = "Something wen
   return error;
 }
 
-// `/api/roast` scrape/LLM-setup failures respond with a plain JSON error envelope; once
-// the LLM call is accepted it switches to an SSE stream — a "roast" event per text chunk
-// as it's generated, followed by either one "complete" event with the final
-// { roast, tips, modelUsed, rateLimit } or one "error" event (envelope, no canned roast)
-// if something failed after streaming had already started. EventSource can't be used
-// here since it only supports GET, so the stream is parsed by hand.
-async function consumeRoastStream(res, onRoastChunk) {
+// Shared by both `/api/roast` and `/api/messages`: each streams a text chunk event as
+// it's generated (event name differs — "roast" vs. "message" — everything else about the
+// shape is identical), then either one "complete" event with the final result or one
+// "error" event (envelope, no canned fallback) if something failed after streaming had
+// already started. EventSource can't be used for either since it only supports GET, so
+// the stream is parsed by hand.
+async function consumeSseStream(res, chunkEventName, onChunk) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -48,8 +48,8 @@ async function consumeRoastStream(res, onRoastChunk) {
       const parsed = parseSseRecord(rawEvent);
       if (!parsed) continue;
 
-      if (parsed.event === "roast") {
-        onRoastChunk?.(parsed.data.text);
+      if (parsed.event === chunkEventName) {
+        onChunk?.(parsed.data.text);
       } else if (parsed.event === "complete") {
         result = parsed.data;
       } else if (parsed.event === "error") {
@@ -59,7 +59,7 @@ async function consumeRoastStream(res, onRoastChunk) {
   }
 
   if (!result) {
-    throw new Error("Roast stream ended without a result");
+    throw new Error("Stream ended without a result");
   }
 
   return result;
@@ -89,7 +89,7 @@ export async function getRoast(url, type, severity = "medium", model, persona, {
   });
 
   if ((res.headers.get("Content-Type") || "").includes("text/event-stream")) {
-    return consumeRoastStream(res, onRoastChunk);
+    return consumeSseStream(res, "roast", onRoastChunk);
   }
 
   const data = await res.json().catch(() => null);
@@ -163,6 +163,109 @@ export async function deleteAccount(accessToken) {
 
   if (!res.ok) {
     const error = errorFromEnvelope(data?.error, null, `Failed to delete account: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// Starts a conversation from an existing roast — the server copies that roast's persona
+// onto the conversation and locks it there (api/conversations.js); there is no persona
+// field here for a client to send. Throws the same envelope-derived Error as getRoast —
+// ROAST_NOT_FOUND when roastId doesn't exist or isn't the caller's own.
+export async function startConversation(accessToken, roastId) {
+  const res = await fetch("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(accessToken) },
+    body: JSON.stringify({ roastId }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to start this conversation: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// `cursor` is the previous page's `nextCursor` (an ISO created_at timestamp) — omit for
+// the first page. Same shape/pagination convention as getHistory.
+export async function getConversations(accessToken, cursor) {
+  const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const res = await fetch(`/api/conversations${params}`, { headers: authHeaders(accessToken) });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to fetch conversations: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// Fetches one conversation with all of its messages, oldest first. CONVERSATION_NOT_FOUND
+// covers both a genuinely missing id and one that belongs to someone else — deliberately
+// indistinguishable, see api/conversations.js.
+export async function getConversation(accessToken, id) {
+  const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { headers: authHeaders(accessToken) });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to fetch this conversation: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// Hard-deletes one of the caller's own conversations (messages cascade server-side). `id`
+// only says which row; the server never trusts it for whose row — see
+// api/conversations.js, backed by Postgres RLS, same pattern as deleteRoast.
+export async function deleteConversation(accessToken, id) {
+  const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, null, `Failed to delete this conversation: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
+
+  return data;
+}
+
+// Posts one message into an existing conversation and streams the reply — same
+// stream-or-status-code shape as getRoast (api/messages.js commits to SSE only once the
+// model call is accepted; a failure before that is a plain JSON envelope), reusing the
+// same consumeSseStream loop with "message" as the chunk event name instead of "roast".
+// There is no persona field to send here either — see startConversation above.
+export async function sendChatMessage(accessToken, conversationId, content, { onChunk } = {}) {
+  const res = await fetch("/api/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(accessToken) },
+    body: JSON.stringify({ conversationId, content }),
+  });
+
+  if ((res.headers.get("Content-Type") || "").includes("text/event-stream")) {
+    return consumeSseStream(res, "message", onChunk);
+  }
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const error = errorFromEnvelope(data?.error, data?.rateLimit, `Failed to send message: ${res.statusText}`);
     error.status = res.status;
     throw error;
   }

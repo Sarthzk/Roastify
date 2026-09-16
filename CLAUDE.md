@@ -624,6 +624,119 @@ endpoint is signed-in only by the time rate limiting runs, so `getRateLimitKey`'
 actually triggers), and skips the check entirely in `NODE_ENV=development`, same dev bypass
 `api/roast.js` uses.
 
+**List endpoint and single-conversation roast payload.** Added 2026-09-18, wiring the frontend to the
+backend above. `api/conversations.js`'s `GET` was `?id=`-only before this (`MISSING_INPUT` otherwise);
+`handleList()` is the missing list mode, dispatched when `?id=` is absent — same file, same method,
+matching how `api/history.js` already dispatches `GET`/`DELETE` off one file rather than adding a
+second route. Paginated 25 at a time via a `cursor` (identical convention to `api/history.js`), newest
+first. Each row needs two things the `conversations` table alone doesn't carry — the roast's `type`
+(the list's "persona · source" kicker) and the conversation's most recent message (its primary line,
+"you: " prefixed when it's the caller's own) — fetched as follow-up queries **awaited sequentially**,
+deliberately not `Promise.all`'d: every query in this file already shares one mutable-per-request
+`client` object one call at a time, and a full page tops out at 25 conversations each hitting
+`messages_conversation_id_idx` (a single indexed row), so parallelizing wasn't worth the added
+error-handling complexity for a personal list page that's never a hot path. `handleGet()` (the `?id=`
+path) also gained a second query it didn't have before: the roast's own `{ type, identifier, severity,
+roast, tips }`, since the chat surface has to keep that roast "visible or easily recallable" and there
+was no other endpoint the frontend could reasonably re-fetch it from. Both extensions stayed inside
+`api/conversations.js` rather than spawning new files — they're pure additions to what this file
+already reads, not new wiring into persona-locking, message-posting, or rate limiting, which is what
+"don't touch the chat backend" was actually protecting.
+
+**Frontend.** `src/routes/ChatList.jsx` (`/chat`) and `src/routes/ChatThread.jsx` (`/chat/:id`) are two
+route components, not one with an optional param — same reasoning `Roaster.jsx`/`History.jsx` already
+being separate route components followed: a paginated list and one open conversation's
+messages/composer/streaming state have nothing in common worth sharing. `CHAT` is a third `<NavLink>`
+in `Layout.jsx`, placed between `roast` and `history` (`.nav-item` is already tab-count-agnostic — no
+new CSS needed for the header at any breakpoint, mobile's 3-band collapse included).
+- **Entry points**, both landing in `/chat/:id` directly, never the list: (1) `RoastCard.jsx`'s
+  completed-roast state gained a `Chat` row — signed in, an amber-outlined `keep talking to <persona>`
+  CTA (`.start-chat-cta`, a new permanently-on outlined style — every other outlined control in this
+  app only goes amber on `:hover`, but this is the one action the whole roast was building toward);
+  signed out, the exact `.invitation-body`/`.source-prompt-provider` locked-row pattern
+  `SIGN_IN_REQUIRED` already uses elsewhere, reused verbatim rather than a new locked variant. Clicking
+  it is `Roaster.jsx`'s `handleStartChat()`, which has a real gap to work around: the roast stream's
+  own `complete` event (`api/roast.js`) never carried the persisted row's id, and adding one there was
+  out of scope (the roast handler itself was off limits for this task). It leans on an invariant that
+  already holds instead — `persistRoast()` writes the row before that event ships, and nothing else can
+  create a roast for this signed-in caller between it landing and this click (the button only exists in
+  the completed state, unreachable again without "roast another" clearing it first) — so it calls
+  `getHistory()` and takes `roasts[0].id`, then `startConversation()`, then navigates with
+  `{ state: { fresh: true } }`. (2) `History.jsx`'s rows — previously inert `<div>`s — now wrap their
+  informational content in a real `<button className="hist-row-open">` (the sibling delete button stays
+  outside it, so the DOM never nests a button in a button) that does the same
+  `startConversation()` → navigate dance. Both entry points call `startConversation()` fresh each time
+  rather than searching for an existing conversation on that roast — there's no find-or-create
+  semantics on the backend, so clicking either one twice makes two separate conversations; this matches
+  what was actually specified (neither the backend nor the design called for deduplication) but is
+  worth knowing if it ever needs to change.
+- **The `fresh` flag** is how `ChatThread.jsx` tells "just created" apart from "reopened" — a fresh
+  conversation's roast context bar starts expanded (the whole point of landing here instead of a blank
+  screen is that the roast is visibly still there); a reopened one starts collapsed, since the
+  transcript below it already carries that context. Read once, off `location.state?.fresh`, into the
+  `expanded` state's initializer.
+- **The roast context bar** shows the persona as plain text (`.chat-context-persona`), never a control
+  — it's locked server-side for the conversation's whole life, so nothing here should look clickable —
+  alongside the roast's type/severity, a `view roast`/`hide roast` toggle, and (only once a message has
+  actually been sent — see below) the remaining chat messages today. A `delete conversation` control
+  sits in the same bar, reusing the exact confirm-bar classes (`.privacy-confirm`,
+  `.hist-row-confirm-*`) `Layout.jsx`'s account panel and `History.jsx`'s own rows already established,
+  rather than a third copy of that pattern.
+- **Rate limit display never fabricates a number**: `rateLimitInfo` starts `null` and only ever gets
+  set from a real `POST /api/messages` response's own `rateLimit` field — there is no endpoint this
+  page can ask for the chat tier's remaining count *before* a first send (`api/rate-limit-status.js`
+  only reports the roast tiers), so the bar simply shows nothing until one exists, same "never fabricate"
+  discipline `roasterErrors.js`'s `describeError()` already follows for the roast flow.
+- **Streaming and the empty state**: `sendChatMessage()` (`src/lib/openai.js`) reuses the exact SSE
+  parsing loop `getRoast()` already used — `consumeRoastStream()` was generalized into
+  `consumeSseStream(res, chunkEventName, onChunk)`, parameterized only on the streamed event's name
+  (`"roast"` vs. `"message"`; `"complete"`/`"error"` are identical either way) — rather than a second
+  hand-rolled SSE reader. A brand-new conversation (no messages, not currently sending) shows three
+  static quick-prompt chips (`QUICK_PROMPTS`, generic rather than persona-specific — the persona itself
+  already sets the voice that answers them) instead of a blank transcript; clicking one just calls
+  `handleSend()` with that text, same as typing it. A send failure restores the typed `draft` (so a
+  failed send never loses what was typed) and reuses `describeError()`/the `.error-body`/`.retry` row
+  the roast flow already renders errors with — no second error-row implementation.
+- **Mobile: only the thread route gets the fixed shell.** `ChatList.jsx` (the `/chat` list) is a normal
+  page at every width, same as `History.jsx`. `ChatThread.jsx`'s top-level `<div className="chat-thread">`
+  is untouched at desktop (normal block flow — the transcript grows with its content, the composer sits
+  in flow right after it, the page scrolls normally like every other route) and only becomes the fixed
+  shell the handoff calls for at the existing 600px breakpoint: `.app-root:has(.chat-thread)` gets a
+  hard `height` (not `min-height`) plus `overflow: hidden`, its `.footer` gets `display: none`, and
+  `.chat-thread` becomes a `flex-direction: column` child filling `.app-main` with `.chat-context-row`/
+  `.chat-composer` as `flex: 0 0 auto` bookends around `.chat-transcript`'s `flex: 1 1 auto; overflow-y:
+  auto`. The header stays visible throughout (chat shouldn't strand someone without a way back to the
+  other tabs) — it's specifically the footer that has no room left and gets dropped. Done entirely with
+  `:has()` off a shared ancestor (the same technique `.fix-row-checkbox:has(.fix-row-checkbox-input:focus-visible)`
+  already uses elsewhere in this stylesheet) rather than any change to `Layout.jsx` — `ChatThread.jsx`'s
+  own top-level class is all the signal this needs, and `ChatList.jsx` never renders that class so it's
+  never affected. Verified directly (not just screenshotted) via the mobile-iframe technique the
+  2026-09-15 mobile audit established (`resize_window` still doesn't actually resize the rendered
+  viewport in this environment): at a real 376px width, `.chat-transcript` measured `scrollHeight: 1440`
+  against `clientHeight: 447` with `overflow-y: auto` and a non-zero `scrollTop`, `.footer`'s computed
+  `display` was `none`, and `.app-root`'s computed `overflow` was `hidden` — the shell is real, not just
+  visually plausible in a screenshot.
+- **A real bug found and fixed while verifying this live** (not by reasoning about the code, by actually
+  hitting it in the browser): `ChatThread.jsx` crashed with `Cannot read properties of null (reading
+  'persona')` on a fresh page load specifically — never on a same-session client-side navigation into
+  it. Cause: `loading`'s only initializer was `useState(signedIn)`, which captures `signedIn` once, on
+  the very first render — and `Layout.jsx`'s `session` always starts `null` and resolves asynchronously,
+  so that first render always has `signedIn: false` regardless of whether the caller is actually signed
+  in. Nothing re-derived `loading` once `signedIn` later flipped `true`, so the component could render
+  with `loading: false`, `conversation: null`, and no error, in the gap before the real fetch resolved.
+  Fixed two ways: the render-time-adjustment key that resets `loading`/`conversation`/etc. on a fresh
+  `:id` was widened to also key off `session?.access_token`, closing the actual gap; and the final
+  render path now treats `loading || !conversation` as still-loading rather than trusting that
+  `loading`/`loadError` exhaustively cover every case where `conversation` might be null — a component
+  shouldn't trust a cross-state invariant like that blindly even when the primary fix already holds.
+- `src/components/ChatLockedPanel.jsx` — the signed-out panel, byte-identical copy needed on both
+  `ChatList.jsx` and `ChatThread.jsx` (a direct `/chat/:id` link while signed out gets the same
+  treatment as `/chat` itself, never a redirect), pulled into one component rather than duplicated.
+- `src/lib/chatHelpers.js` — `formatDate()` (moved out of `History.jsx`, which had its own private copy;
+  now shared with `ChatList.jsx`'s row dates) and `lastMessagePreview()` (the "you: " prefix logic),
+  both pure and colocated-tested (`chatHelpers.test.js`) per this codebase's existing convention for
+  logic pulled out of a component file (`roasterErrors.js`/`inputFormHelpers.js`).
+
 ### Routing and page structure
 Redesigned 2026-08-21 (v2) and again 2026-09-13 (v3) from Claude Design handoffs — see
 `WORK_LOG.md` for both sessions. v3 added real routing (`react-router-dom`), the header's nav/auth,
@@ -631,11 +744,12 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
 **Component boundaries match the design's own file-mapping table**, not an ad-hoc split:
 
 - `src/main.jsx` wraps `<App>` in a `<BrowserRouter>`. `src/App.jsx` is now just the route table —
-  four routes (`/`, `/history`, `/r/:slug`, `/privacy`), all nested under one `<Route element={<Layout />}>` so
-  they share one header/footer shell with no other nested layouts. `vercel.json`'s rewrites list a
-  catch-all (`/(.*) → /index.html`) after the existing `/api/(.*)` one, so a direct hit on `/history`,
-  `/r/:slug`, or `/privacy` in production is served the SPA shell instead of 404ing — Vercel only falls through to
-  a rewrite when no matching static file exists, so this doesn't shadow real asset requests.
+  six routes (`/`, `/chat`, `/chat/:id`, `/history`, `/r/:slug`, `/privacy`), all nested under one
+  `<Route element={<Layout />}>` so they share one header/footer shell with no other nested layouts.
+  `vercel.json`'s rewrites list a catch-all (`/(.*) → /index.html`) after the existing `/api/(.*)` one,
+  so a direct hit on `/chat`, `/chat/:id`, `/history`, `/r/:slug`, or `/privacy` in production is served
+  the SPA shell instead of 404ing — Vercel only falls through to a rewrite when no matching static file
+  exists, so this doesn't shadow real asset requests.
 - `src/routes/Layout.jsx` owns the state every route needs — `session` (a plain `useState` fed by a
   `supabase.auth.onAuthStateChange` subscription, see "Auth & persistence" above; no auth state
   library), `signInOpen` (the header's sign-in dropdown), and `accountOpen` (the signed-in handle's
@@ -645,8 +759,9 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   Deliberately *not* where roaster-specific state lives — see `Roaster.jsx` below for why. `.brand`
   (the wordmark) is a real `<Link to="/">`, not a `<div>` — a real `href` so middle-click/cmd-click
   work, and no special-casing needed for "inert on `/`" since that's just how `<Link>` already behaves.
-  Nav is two `<NavLink>`s (`roast` / `history`) whose `isActive` styling comes from the current path,
-  not app state. Both panels share one mechanism, `src/lib/useDismissiblePanel.js` — a hook taking a
+  Nav is three `<NavLink>`s (`roast` / `chat` / `history`, added 2026-09-18 for chat) whose `isActive`
+  styling comes from the current path, not app state — `.nav-item` was already tab-count-agnostic at
+  every breakpoint (including the mobile 3-band header collapse), so adding the third needed no new CSS. Both panels share one mechanism, `src/lib/useDismissiblePanel.js` — a hook taking a
   container ref (must wrap both the trigger and the panel, so an outside click is measured against the
   whole unit), a trigger ref, and an `onDismiss` callback, returning a `close()` for the panel's own
   "close" button to call. Internally: outside-click and `Escape` both dismiss (`Escape` additionally
@@ -696,7 +811,9 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   gets a real countdown from `err.rateLimit.reset`, a scrape-family error names the source type
   checked, never the raw submitted text). `instagramOpen = instagramEnabled && signedIn` is the single
   source of truth this route uses for "is Instagram actually usable right now" — both a mid-session
-  kill-switch flip and a sign-out fall back the selected type to `github` via the same effect.
+  kill-switch flip and a sign-out fall back the selected type to `github` via the same effect. Also
+  owns `handleStartChat()`, the first of chat's two entry points — see the "Chat" section above for
+  both entry points, `ChatList.jsx`/`ChatThread.jsx`, and the rest of the chat frontend in detail.
 - `src/components/InputForm.jsx` — source row, input row, persona row, and (as of v3) its own
   separate severity row; no longer bundles severity into a "voice" row with persona (see the v3
   handoff's own reasoning: two decisions that used to share one gutter label now each get their own).
@@ -733,7 +850,8 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   from v2's 4-cell grid to one line (`type · personaName · severity`, plus `· saved` when signed in) —
   `RoastCard` no longer needs a `modelUsed`-only concept there; that still only shows in the Roast
   label itself, dev-only. Tip checklist, share, save-as-image, and "roast another" are unchanged from
-  v2.
+  v2. A new "Chat" row (added 2026-09-18, between the Fixes section and the actions grid) is the
+  completed-roast state's chat entry point — see the "Chat" section above.
 - `src/routes/History.jsx` (route `/history`) — signed-in only, but the route itself is reachable by
   anyone (a shared `/history` link must never redirect or 404 — see the v3 handoff). Signed out: an
   invitation-marker locked panel with its own two sign-in buttons (`signIn` from the outlet context).
@@ -745,8 +863,11 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   populated list (`Saved <n>`, paginated 25 at a time via a `cursor` query param, `load more` fetches
   the next page). Rows show `type`/`identifier`/`persona`/`severity`/`created_at` from
   `api/history.js` — `identifier` renders `—` for `linkedin`/`resume` rows, which have none (see
-  "Auth & persistence" above: raw pasted/PDF text is never persisted). Rows don't link anywhere yet —
-  there's no real `/r/:slug` behind them until the sharing task ships real slugs. Each row has its own
+  "Auth & persistence" above: raw pasted/PDF text is never persisted). Each row's informational content
+  is now wrapped in a real `<button className="hist-row-open">` (added 2026-09-18, chat's second entry
+  point — see the "Chat" section above) that opens a chat conversation on that roast; the delete button
+  stays a sibling, not nested inside it, so the DOM never nests a button in a button. There's still no
+  real `/r/:slug` behind these rows until the sharing task ships real slugs. Each row also keeps its own
   `delete` control (absolutely positioned, so it doesn't need a 5th grid column) that swaps the row for
   an inline "Delete this roast? This can't be undone." confirm bar — never a native `confirm()` — and
   only calls `deleteRoast()` (`src/lib/openai.js`, `DELETE /api/history?id=`) on the second click,
@@ -770,7 +891,10 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   previous page's `nextCursor` (an ISO `created_at` timestamp) from `api/history.js`.
   `deleteRoast(accessToken, id)` (`DELETE /api/history?id=`) and `deleteAccount(accessToken)`
   (`DELETE /api/account`) round out the CRUD surface. All four throw the same envelope-derived `Error`
-  shape on a non-2xx response.
+  shape on a non-2xx response. `startConversation`/`getConversations`/`getConversation`/
+  `deleteConversation`/`sendChatMessage` (added 2026-09-18) are chat's equivalents — see the "Chat"
+  section above; `sendChatMessage` streams through the same generalized `consumeSseStream()` helper
+  `getRoast` uses, not a second SSE implementation.
 - `src/lib/roasterErrors.js` / `src/lib/inputFormHelpers.js` — pure logic pulled out of `Roaster.jsx`
   (`describeError`, `formatCountdown`) and `InputForm.jsx` (`sourceState`, the upload
   classification/failure-message functions) specifically so each has real test coverage

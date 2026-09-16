@@ -6,6 +6,74 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-18
+
+### Chat UI: wiring the finished backend to a real interface
+The chat backend (`api/conversations.js`, `api/messages.js`, persona locking, its own
+rate-limit tier, scraped-profile-data context — see the last two entries) had no
+interface at all. Implemented from a Claude Design handoff, substituting browser-based
+research (reading the design tool's own conversation log, which turned out to carry the
+full brief and implementation notes) for the `claude_design` MCP tool, which wasn't
+available in this environment. Full architectural writeup lives in `CLAUDE.md`'s "Chat"
+section's new "List endpoint and single-conversation roast payload" and "Frontend"
+subsections — not duplicated here; this entry is the why and the verification.
+
+**One missing backend piece, added as an explicit extension of `api/conversations.js`**:
+there was no way to list a caller's conversations. Added `handleList()` (paginated 25 at
+a time, RLS-backed, matching `api/history.js`'s own convention) dispatched off `GET`
+with no `?id=`; `handleGet()` (the `?id=` path) also gained the linked roast's full
+`{ type, identifier, severity, roast, tips }` in its response, since the chat surface
+has to keep the roast it's attached to visibly available. 18 tests in
+`api/conversations.test.js` now (was fewer before the list mode existed).
+
+**Two real entry points, both landing on `/chat/:id` directly, never the list**: a
+"keep talking to `<persona>`" button on a completed roast (`RoastCard.jsx`), and
+`History.jsx` rows, previously inert, now clickable. Neither backend endpoint returns a
+roast id from the action that creates it (the roast stream's own `complete` event has no
+row id, and touching `api/roast.js` was out of scope), so `Roaster.jsx`'s entry point
+leans on a documented invariant instead: `persistRoast()` writes the row before that
+event ships, and nothing else can create a roast for this caller in the gap between
+that and the click, so the newest row in their own history is reliably this one.
+
+**Mobile fixed shell**: the handoff calls for `/chat/:id` specifically (not the list) to
+become a fixed-height, non-scrolling page shell on mobile — header pinned, footer
+dropped, only the transcript itself scrolls. Implemented entirely in CSS via the `:has()`
+selector off a single marker class on the route's own root element
+(`.app-root:has(.chat-thread)`), so `Layout.jsx` (the shared header/footer shell every
+other route also uses) needed zero changes. Verified for real, not just visually:
+`resize_window` doesn't actually change the rendered viewport in this environment (a
+known limitation from an earlier session's mobile audit), so verification used a
+same-origin `<iframe>` injected at a genuine 376px width, inspected directly via
+`getComputedStyle()` — confirmed `.chat-transcript`'s real `scrollHeight`/`clientHeight`/
+`overflow-y`/`scrollTop`, `.footer`'s computed `display: none`, and `.app-root`'s
+computed `overflow: hidden`, rather than trusting a screenshot alone.
+
+**A real bug found only by live testing, not by the test suite**: `ChatThread.jsx`
+crashed with `Cannot read properties of null (reading 'persona')` on a fresh page load
+specifically (never on a same-session client-side navigation into it) — `loading`'s
+`useState(signedIn)` initializer captures `signedIn` once, on the very first render,
+which always sees `signedIn: false` since `Layout.jsx`'s session always starts `null`
+and resolves asynchronously; nothing re-derived `loading` once it later flipped true.
+Vitest's `node` environment has no real async session-resolution timing, so this was
+never going to surface from the automated suite — exactly the reason live click-through
+verification was worth doing. Fixed at the actual root cause (widened the existing
+render-time-adjustment key to include the session token, not just `:id`) plus a
+defensive `loading || !conversation` guard at the crash site itself, ordered after the
+`loadError` check specifically so a real error can't get silently swallowed into an
+infinite loading state.
+
+**Verification**: 225 tests pass (up from 215 — the new `chatHelpers.js` pure-logic
+tests plus the new `api/conversations.js` list-mode tests), lint and build clean. Live
+click-through in the browser with a real signed-in Supabase session covered both entry
+points, the list (empty and populated), a live conversation (streaming, quick-prompt
+chips on an empty thread, sending, error display with draft preserved on failure), the
+signed-out locked state on both `/chat` and `/chat/:id`, delete (confirmed cascade-delete
+of a conversation's messages), and mobile at 376px. Test data (a roast + its
+conversations) created during this testing was cleaned up via the app's own delete UI
+before concluding.
+
+---
+
 ## 2026-09-17
 
 ### Give chat access to scraped profile data (GitHub/Instagram only)

@@ -1204,6 +1204,47 @@ a:hover {
   margin-top: 4px;
 }
 
+/* Entry point 1 into chat: the CTA on a just-finished roast (RoastCard.jsx's complete
+   state). Deliberately not another .action-btn in the row below — those are plain-text,
+   secondary actions (share/save/roast another); this is the one the whole roast was
+   building toward, so it gets its own outlined-amber treatment, permanently on rather
+   than only on :hover like .retry/.source-prompt-provider. The signed-out variant reuses
+   .invitation-body/.source-prompt-provider verbatim instead (same row, no new CSS) — see
+   RoastCard.jsx. */
+.start-chat-body {
+  padding: 28px 28px 32px;
+  background: var(--ground-2);
+}
+.start-chat-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 24px;
+  min-height: var(--touch-48);
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: background-color 0.18s, color 0.18s;
+}
+.start-chat-cta:hover:not(:disabled) {
+  background: var(--accent);
+  color: #000;
+}
+.start-chat-cta:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.start-chat-error {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--accent);
+}
+
 .result-enter {
   animation: r-fade 0.4s ease-out both;
 }
@@ -1327,8 +1368,15 @@ a:hover {
    than the gutter labels around it. Three explicit levels (source handle = primary,
    persona/severity = secondary, source kind/date = tertiary) using the --ink-row-*
    tokens above; nothing in a row uses --ink-2/--ink-3, which stay gutter-label-only. */
+/* .hist-row is now just the positioning context for .hist-row-delete (absolutely placed,
+   outside the grid entirely) plus the shared border between rows — the actual grid lives
+   on .hist-row-open below, a real <button> so the row is a genuine click target (opens
+   chat — see History.jsx) rather than a div with no affordance or keyboard reachability. */
 .hist-row {
-  position: relative; /* anchors .hist-row-delete, which sits outside the grid entirely */
+  position: relative;
+  border-bottom: 1px solid var(--rule-2);
+}
+.hist-row-open {
   display: grid;
   grid-template-columns: 1.4fr 1fr 0.8fr 0.6fr;
   align-items: center;
@@ -1339,10 +1387,20 @@ a:hover {
      severity/date layout that's already been checked for overflow across breakpoints. */
   padding: 20px 64px 20px 28px;
   border: 0;
-  border-bottom: 1px solid var(--rule-2);
   background: transparent;
-  cursor: default;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   text-align: left;
+  transition: background-color 0.18s;
+}
+.hist-row-open:hover,
+.hist-row-open:focus-visible {
+  background: var(--ground-2);
+}
+.hist-row-open:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 .hist-row-source {
   display: flex;
@@ -1416,6 +1474,9 @@ a:hover {
   justify-content: space-between;
   gap: 20px;
   flex-wrap: wrap;
+  /* .hist-row itself carries no padding anymore (see .hist-row-open above) — this variant
+     swaps in for .hist-row-open entirely rather than wrapping it, so it needs its own. */
+  padding: 20px 64px 20px 28px;
 }
 .hist-row-confirm-text {
   font-size: 14px;
@@ -1458,6 +1519,300 @@ a:hover {
   font-size: 13px;
   color: var(--accent);
   border-bottom: 1px solid var(--rule-2);
+}
+
+/* ===========================================================================
+   9. Chat list — reuses .hist-row (the positioning shell) and the delete/confirm
+   classes wholesale; only the row's own content shape is new. A history row identifies a
+   roast by source/persona/severity/date across four columns because those are four
+   independent facts; a chat row is a conversation, best identified by what was actually
+   said, so it's two lines instead: a kicker (persona · source, tertiary) with the date,
+   then the last message (primary) below it — reusing the exact --ink-row-3/--ink token
+   pair .hist-row-date/.hist-row-handle already established for that tertiary/primary
+   split, not a new one.
+   =========================================================================== */
+.chat-row-open {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 20px 64px 20px 28px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.18s;
+}
+.chat-row-open:hover,
+.chat-row-open:focus-visible {
+  background: var(--ground-2);
+}
+.chat-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.chat-row-kicker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-row-3);
+}
+.chat-row-date {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-row-3);
+  white-space: nowrap;
+}
+.chat-row-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* ===========================================================================
+   10. Chat thread (/chat/:id) — desktop is a normal flowing page: the context bar is
+   just another .row, the transcript grows with its content, the composer sits in flow
+   right after it, same as every other route. Only at the 600px breakpoint below does
+   this swap to the fixed shell the handoff calls for (mobile is the priority surface for
+   chat) — see that query for the mechanism.
+   =========================================================================== */
+.chat-context-bar {
+  display: flex;
+  flex-direction: column;
+}
+.chat-context-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 18px 28px;
+}
+.chat-context-back {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.chat-context-back:hover {
+  color: var(--accent);
+}
+/* Plain text, deliberately not a button — the persona is locked server-side for this
+   conversation's whole life (see api/conversations.js), so nothing here should invite a
+   click the way .chat-context-toggle below genuinely does. */
+.chat-context-persona {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+}
+.chat-context-meta {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-2);
+}
+/* Real numbers from the last message's own response (api/messages.js's `rateLimit`),
+   never shown until then — there's no endpoint this page can ask for the chat tier's
+   remaining count before a first send, and a fabricated number would be worse than none. */
+.chat-context-rate {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-3);
+}
+.chat-context-spacer {
+  flex: 1;
+}
+.chat-context-toggle {
+  background: none;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.chat-context-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.chat-context-roast {
+  padding: 0 28px 24px;
+  border-bottom: 1px solid var(--rule-2);
+  animation: r-fade 0.25s ease-out both;
+}
+.chat-context-roast-text {
+  margin: 0 0 16px;
+  max-width: 70ch;
+  font-size: 16px;
+  line-height: 28px;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.chat-context-tips {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 24px;
+  color: var(--ink-row-2);
+}
+.chat-context-danger {
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--rule-2);
+}
+.chat-context-delete {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.chat-context-delete:hover {
+  color: var(--accent);
+}
+
+.chat-empty {
+  padding: 56px 28px;
+  background: var(--ground-2);
+}
+.chat-empty-title {
+  margin-bottom: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink);
+}
+.chat-empty-copy {
+  margin: 0 0 24px;
+  max-width: 60ch;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.chat-chip {
+  padding: 12px 18px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.chat-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Same terminal-printing treatment as .roast-body/.stream-text (see api/roast.js's own
+   streaming section), at a smaller size — a chat reply is one turn in a back-and-forth,
+   not the single centerpiece a roast is. */
+.chat-message {
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--rule-2);
+}
+.chat-message--assistant {
+  background: var(--ground-2);
+}
+.chat-message-role {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-3);
+}
+.chat-message--assistant .chat-message-role {
+  color: var(--accent);
+}
+.chat-message-text {
+  margin: 0;
+  max-width: 65ch;
+  font-size: 17px;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.caret--sm {
+  width: 9px;
+  height: 17px;
+  margin-left: 3px;
+  vertical-align: -2px;
+}
+.chat-message-error {
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.chat-composer {
+  display: flex;
+  align-items: stretch;
+  border-top: 2px solid var(--rule);
+}
+.chat-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 64px;
+  max-height: 200px;
+  padding: 20px 28px;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 24px;
+  resize: none;
+  outline: none;
+}
+.chat-composer-send {
+  flex-shrink: 0;
+  padding: 0 28px;
+  background: var(--accent);
+  border: 0;
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: opacity 0.18s;
+}
+.chat-composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ===========================================================================
@@ -1805,7 +2160,7 @@ a:hover {
   .persona-cell:nth-child(n + 3) .persona-cell-bar { top: -1px; }
   .persona-grid > .persona-cell:nth-child(3) { grid-column: span 2; }
 
-  .hist-row { grid-template-columns: 1fr 1fr; }
+  .hist-row-open { grid-template-columns: 1fr 1fr; }
 
   .out-body { padding: 32px 24px 36px; }
   .roast-body, .stream-text { font-size: 20px; line-height: 32px; }
@@ -1877,18 +2232,18 @@ a:hover {
   .action-btn { padding: 18px 20px; min-height: 56px; border-left: 0; }
   .action-btn + .action-btn { border-top: 1px solid var(--rule-2); }
 
-  /* :not(.hist-row-confirm) so this doesn't also flip the confirm bar (same element, both
-     classes) from its own flex row to block — it needs to stay a row of text + buttons. */
-  .hist-row:not(.hist-row-confirm) { display: block; padding: 16px 56px 16px 20px; }
-  .hist-row > * { padding: 3px 0; }
+  .hist-row-open { display: block; padding: 16px 56px 16px 20px; }
+  .hist-row-open > * { padding: 3px 0; }
   /* .hist-row-persona/-severity/-date are <span>s (inline by default) — the padding above
      has no vertical effect on an inline element, so without this all three ran together
      on one line instead of stacking, one field per line, the way .hist-row-source's own
-     flex column already does. Targeted rather than `.hist-row > *` so it doesn't also
+     flex column already does. Targeted rather than `.hist-row-open > *` so it doesn't also
      flip .hist-row-source from flex to block and break its own kind/handle stacking. */
   .hist-row-persona, .hist-row-severity, .hist-row-date { display: block; }
   .hist-row-severity { border: 0; }
   .hist-row-delete { top: 16px; right: 20px; }
+  .chat-row-open { padding: 16px 56px 16px 20px; }
+  .chat-row-message { font-size: 15px; }
 
   .share-body, .out-body.share-body { padding: 26px 20px 30px; }
   .cta { padding: 28px 20px; }
@@ -1899,6 +2254,41 @@ a:hover {
   .footer-link { border-right: 0; border-bottom: 1px solid var(--rule); padding: 18px 20px; min-height: var(--touch-44); }
   .footer-spacer { display: none; }
   .footer-brand { border-left: 0; padding: 16px 20px; }
+
+  /* Chat thread's fixed shell — mobile only, and only the thread route (ChatList's own
+     /chat stays a normal page). The header stays visible (so chat doesn't strand someone
+     without a way back to the other tabs); the footer is what gets dropped, since a
+     scrolling-transcript-plus-pinned-composer layout has no room for it and nothing below
+     the composer needs to be reachable anyway. Done with :has() off a shared ancestor
+     (same technique .fix-row-checkbox already uses) rather than any change to
+     Layout.jsx — ChatThread.jsx's own top-level element is all the signal this needs. */
+  .app-root:has(.chat-thread) {
+    height: calc(100dvh / var(--root-zoom));
+    overflow: hidden;
+  }
+  .app-root:has(.chat-thread) .footer {
+    display: none;
+  }
+  .app-main:has(.chat-thread) {
+    display: flex;
+    min-height: 0;
+  }
+  .chat-thread {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .chat-context-row { flex: 0 0 auto; }
+  .chat-context-head { padding: 14px 20px; gap: 14px; }
+  .chat-context-roast { padding: 0 20px 20px; }
+  .chat-context-danger { padding: 12px 20px; }
+  .chat-transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .chat-message { padding: 18px 20px; }
+  .chat-empty { padding: 36px 20px; }
+  .chat-composer { flex: 0 0 auto; }
+  .chat-composer-input { padding: 16px 20px; font-size: 16px; }
+  .chat-composer-send { padding: 0 20px; min-height: var(--touch-48); }
 }
 
 @media (max-width: 380px) {

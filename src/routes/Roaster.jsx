@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import InputForm from "../components/InputForm";
 import RoastCard from "../components/RoastCard";
-import { getRoast, getRateLimitStatus } from "../lib/openai";
+import { getRoast, getRateLimitStatus, getHistory, startConversation } from "../lib/openai";
 import { DEFAULT_PERSONA, personaName } from "../lib/personas";
 import { describeError } from "../lib/roasterErrors";
 
 export default function Roaster() {
   const { session, signIn, openSignIn } = useOutletContext();
+  const navigate = useNavigate();
 
   const [url, setUrl] = useState("");
   const [type, setType] = useState("github");
@@ -19,6 +20,8 @@ export default function Roaster() {
   const [error, setError] = useState(null);
   const [rateLimitStatus, setRateLimitStatus] = useState(null);
   const [resetKey, setResetKey] = useState(0);
+  const [startingChat, setStartingChat] = useState(false);
+  const [chatError, setChatError] = useState(null);
   const outputRef = useRef(null);
 
   const status = loading ? "streaming" : error ? "error" : result ? "complete" : "idle";
@@ -72,11 +75,36 @@ export default function Roaster() {
   function handleRoastAnother() {
     setResult(null);
     setError(null);
+    setChatError(null);
     setUrl("");
     // Remounts InputForm, clearing its local upload state (the file confirmation card,
     // upload status/error) for free — see CLAUDE.md's "Frontend structure" for why that
     // state stays local rather than living here.
     setResetKey((k) => k + 1);
+  }
+
+  // Entry point 1 into chat (the other is a history row — see History.jsx). The roast
+  // stream's own `complete` event (api/roast.js) never included a persisted row id —
+  // adding one there is out of scope for this task (the roast handler itself is off
+  // limits) — so this leans on an invariant that already holds instead: persistRoast()
+  // writes the row *before* that event ships, and nothing else can create a roast for
+  // this signed-in caller between it landing and this click (the button only exists in
+  // the completed-roast state, which can't be reached again without "roast another"
+  // clearing it first). The newest row in the caller's own history is, in practice,
+  // exactly this one.
+  async function handleStartChat() {
+    setStartingChat(true);
+    setChatError(null);
+    try {
+      const history = await getHistory(session.access_token);
+      const roastId = history.roasts[0]?.id;
+      if (!roastId) throw new Error("Couldn't find that roast in your history yet — try again in a moment.");
+      const conversation = await startConversation(session.access_token, roastId);
+      navigate(`/chat/${conversation.id}`, { state: { fresh: true } });
+    } catch (err) {
+      setChatError(err.message);
+      setStartingChat(false);
+    }
   }
 
   async function handleSubmit() {
@@ -192,6 +220,9 @@ export default function Roaster() {
           onRetry={handleSubmit}
           onRoastAnother={handleRoastAnother}
           onSignIn={signIn}
+          onStartChat={handleStartChat}
+          startingChat={startingChat}
+          chatError={chatError}
         />
       </div>
     </div>

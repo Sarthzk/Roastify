@@ -48,24 +48,30 @@ Instagram, and every roast you generate is saved to **`/history`**. Every roast 
 persisted either way, signed in or not — an anonymous one just isn't attributed to
 anyone or listed anywhere.
 
-Roastify has four routes: `/` (the roaster), `/history` (your own past roasts, signed
-in only — a signed-out visit gets an explanation and a sign-in prompt, never a redirect
-or a dead link — each roast has its own delete control), `/r/:slug` (a single shared
-roast — route and page shell exist, but there's no way to actually generate a shareable
-link yet; that's a separate, later feature), and `/privacy` (what's collected, where it
-goes, and how to delete a roast or your whole account).
+Roastify has six routes: `/` (the roaster), `/chat` (every conversation you have going,
+signed in only), `/chat/:id` (one conversation — its transcript, composer, and the roast
+it's attached to), `/history` (your own past roasts, signed in only — a signed-out visit
+gets an explanation and a sign-in prompt, never a redirect or a dead link — each roast has
+its own delete control), `/r/:slug` (a single shared roast — route and page shell exist,
+but there's no way to actually generate a shareable link yet; that's a separate, later
+feature), and `/privacy` (what's collected, where it goes, and how to delete a roast or
+your whole account).
 
 Sign-in is entirely optional infrastructure: with `VITE_SUPABASE_URL` /
 `VITE_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` unset, the whole app runs
 anonymous-only (same as before Supabase was added) — no crash, no degraded experience
 beyond not having an account tier to opt into.
 
-### Chat (backend only)
+### Chat
 
 A signed-in user can continue a conversation in the same persona voice that produced one
 of their roasts — the persona is locked at creation and can't be changed mid-conversation.
-This is backend-only for now (no UI yet — see `CLAUDE.md`'s "Chat" section), so it's
-built to be fully exercised by curl.
+Two ways in, both landing directly on `/chat/:id` (never the list): a "keep talking to
+`<persona>`" button on a just-completed roast, or clicking any row in `/history`. `/chat`
+itself is the list of every conversation you have going, newest activity first. On mobile
+(≤600px), `/chat/:id` becomes a fixed-height shell — header pinned, footer dropped, only
+the transcript scrolls — instead of the normal page-scrolls-with-content layout every
+other route uses; see `CLAUDE.md`'s "Chat" section for exactly how.
 
 For GitHub and Instagram roasts, the model also gets the scraped profile data alongside
 the roast text/tips — so "what about my other repos?" gets a real answer instead of an
@@ -73,6 +79,9 @@ invented one — for 30 days after the roast, after which it's treated as gone a
 falls back to the roast alone. LinkedIn and resume roasts never get this: that text comes
 from an uploaded document, and the privacy page promises uploaded files are never
 stored — chat for those two always works from the roast text alone, same as before.
+
+The backend is also fully exercisable by curl, useful for debugging without going through
+the UI:
 
 ```sh
 TOKEN="<a real Supabase access_token — see below>"

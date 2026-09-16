@@ -1,18 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
-import { getHistory, deleteRoast } from "../lib/openai";
-import { PERSONAS } from "../lib/personas";
-
-function personaLabel(id) {
-  return PERSONAS.find((p) => p.value === id)?.name ?? id;
-}
-
-function formatDate(iso) {
-  const d = new Date(iso);
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = d.toLocaleString("en-US", { month: "short" }).toLowerCase();
-  return `${day} ${month}`;
-}
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
+import { getHistory, deleteRoast, startConversation } from "../lib/openai";
+import { personaName } from "../lib/personas";
+import { formatDate } from "../lib/chatHelpers";
 
 // The closing panel below the list — title/body/CTA are count-aware, and it's the
 // list's own terminator (no separate footer CTA needed). Its min-height keeps a short
@@ -45,6 +35,7 @@ function nextPanelCopy(count) {
 // what's saved.
 export default function History() {
   const { session, signIn } = useOutletContext();
+  const navigate = useNavigate();
   const signedIn = Boolean(session);
 
   const [roasts, setRoasts] = useState([]);
@@ -57,6 +48,10 @@ export default function History() {
   const [confirmingId, setConfirmingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
+  // Which row is mid-"open chat" request — a row's own informational area is a button
+  // (see the render below), so this doubles as that button's disabled/pending state.
+  const [openingId, setOpeningId] = useState(null);
+  const [openError, setOpenError] = useState(null);
 
   // Resets loading/error the moment there's a new token to fetch with (sign-in, or a
   // session refresh) — adjusted during render (React's own pattern for "reset state when
@@ -111,6 +106,24 @@ export default function History() {
     } finally {
       setDeletingId(null);
       setConfirmingId(null);
+    }
+  }
+
+  // A history row is the second of the two entry points into chat (the other is the
+  // "start chat" CTA on a just-finished roast — see RoastCard.jsx) — both land in
+  // /chat/:id, never a blank thread, by starting the conversation first and only
+  // navigating once the server hands back its id. Owner-only the same way delete already
+  // is: `r.id` only says which roast, ROAST_NOT_FOUND covers both "doesn't exist" and
+  // "isn't yours" — see api/conversations.js.
+  async function handleOpenChat(roastId) {
+    setOpeningId(roastId);
+    setOpenError(null);
+    try {
+      const conversation = await startConversation(session.access_token, roastId);
+      navigate(`/chat/${conversation.id}`);
+    } catch (err) {
+      setOpenError(err.message);
+      setOpeningId(null);
     }
   }
 
@@ -187,6 +200,7 @@ export default function History() {
                 Saved <span className="history-list-label">{roasts.length}</span>
               </div>
               {deleteError && <p className="hist-delete-error">Couldn't delete that roast — {deleteError}</p>}
+              {openError && <p className="hist-delete-error">Couldn't open that conversation — {openError}</p>}
               <div>
                 {roasts.map((r) =>
                   confirmingId === r.id ? (
@@ -208,13 +222,23 @@ export default function History() {
                     </div>
                   ) : (
                     <div key={r.id} className="hist-row">
-                      <span className="hist-row-source">
-                        <span className="hist-row-kind">{r.type}</span>
-                        <span className="hist-row-handle">{r.identifier ?? "—"}</span>
-                      </span>
-                      <span className="hist-row-persona">{personaLabel(r.persona).toLowerCase()}</span>
-                      <span className="hist-row-severity">{r.severity}</span>
-                      <span className="hist-row-date">{formatDate(r.created_at)}</span>
+                      {/* The row's informational area is the click target that opens chat
+                          — a real <button>, not the whole <div>, so the sibling delete
+                          button below doesn't end up nested inside it. */}
+                      <button
+                        type="button"
+                        className="hist-row-open"
+                        onClick={() => handleOpenChat(r.id)}
+                        disabled={openingId === r.id}
+                      >
+                        <span className="hist-row-source">
+                          <span className="hist-row-kind">{r.type}</span>
+                          <span className="hist-row-handle">{r.identifier ?? "—"}</span>
+                        </span>
+                        <span className="hist-row-persona">{(personaName(r.persona) ?? r.persona).toLowerCase()}</span>
+                        <span className="hist-row-severity">{r.severity}</span>
+                        <span className="hist-row-date">{openingId === r.id ? "opening…" : formatDate(r.created_at)}</span>
+                      </button>
                       <button
                         type="button"
                         className="hist-row-delete"
