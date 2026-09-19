@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import html2canvas from "html2canvas";
+import VerdictCard from "./VerdictCard";
+import { exportCardAsImage } from "../lib/exportCard";
 
 // Owns all Output states — idle / streaming / error / invitation / complete — exactly
 // one renders at a time, matching the handoff's own component-mapping table.
@@ -9,8 +10,9 @@ export default function RoastCard({
   tips,
   error,
   type,
+  identifier,
   severity,
-  personaName,
+  persona,
   modelUsed,
   signedIn,
   onRetry,
@@ -66,51 +68,65 @@ get roasted at roastify.vercel.app`;
 
     setGenerating(true);
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        // html2canvas passes this straight to a canvas fillStyle, which doesn't resolve
-        // CSS custom properties — must stay a literal hex, unlike every other color in
-        // this file (kept in sync with --ground-2 in src/index.css).
-        backgroundColor: "#0a0a0a",
-        scale: 2,
-      });
-      const link = document.createElement("a");
-      link.download = "roastify-roast.png";
-      link.href = canvas.toDataURL();
-      link.click();
+      await exportCardAsImage(cardRef.current, "roastify-roast.png");
     } finally {
       setGenerating(false);
     }
   }
 
+  // Only github/instagram's `identifier` is a real, displayable handle/URL — strip it
+  // down to the bare username (no protocol, no "github.com/"), never the full pasted
+  // URL. linkedin/resume have no handle to show, so it's a plain, honest label derived
+  // from `type` instead, never fabricated.
+  const handle = identifier?.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/^(github|instagram)\.com\//i, "").replace(/\/+$/, "");
+  const targetEcho = handle || (type === "linkedin" ? "LinkedIn PDF" : type === "resume" ? "Resume" : "target_undefined");
+
+  const head = (
+    <div className="rs-verdict-head">
+      <span className="rs-verdict-id">
+        <span className="rs-verdict-dot" />
+        Verdict
+      </span>
+      <span className="rs-verdict-target">
+        <span className="rs-verdict-target-label">Target:</span>
+        <span className="rs-verdict-target-value">{targetEcho}</span>
+      </span>
+    </div>
+  );
+
   if (status === "idle") {
     return (
-      <section className="row">
-        <div className="row-label">Output</div>
-        <div className="idle-body">
-          <span className="idle-label">awaiting input</span>
-          <span className="idle-cursor" />
+      <div className="rs-verdict">
+        {head}
+        <div className="rs-verdict-body">
+          <div className="rs-idle">
+            <span className="rs-idle-icon">&#9678;</span>
+            <span className="rs-idle-title">Awaiting target</span>
+            <p className="rs-idle-copy">
+              Pick a source on the left, dial in an intensity and an executioner, then run
+              the audit. No sugar-coating, no corporate fluff.
+            </p>
+          </div>
         </div>
-      </section>
+      </div>
     );
   }
 
   if (status === "streaming") {
     // Two real lifecycle states, not a timer: no roast text has arrived yet vs. tokens
-    // are actively streaming in. No fake "stages" tied to a fixed clock or to GitHub-
-    // specific flavor text — that would misrepresent what's actually happening, and
-    // would read as a bug on a non-GitHub roast.
+    // are actively streaming in. No fake "stages" tied to a fixed clock.
     const streamStage = roast.length === 0 ? "reading profile…" : "printing…";
     return (
-      <section className="row">
-        <div className="row-label row-label--accent">Generating</div>
-        <div className="out-body">
-          <div className="stream-line">{streamStage}</div>
-          <p className="stream-text">
+      <div className="rs-verdict">
+        {head}
+        <div className="rs-verdict-body">
+          <div className="rs-stream-label">{streamStage}</div>
+          <p className="rs-stream-text">
             {roast}
-            <span className="caret" />
+            <span className="rs-caret" />
           </p>
         </div>
-      </section>
+      </div>
     );
   }
 
@@ -121,141 +137,94 @@ get roasted at roastify.vercel.app`;
     // ever being reached; this only covers a session expiring mid-flow.
     if (error.code === "SIGN_IN_REQUIRED") {
       return (
-        <section className="row">
-          <div className="row-label">Output</div>
-          <div className="invitation-body">
-            <div className="invitation-top">
-              <span className="invitation-icon">&#8226;</span>
-              <span className="invitation-msg">{error.message}</span>
-            </div>
-            <div className="invitation-actions">
-              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
-                github
-              </button>
-              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
-                google
-              </button>
+        <div className="rs-verdict">
+          {head}
+          <div className="rs-verdict-body">
+            <div className="rs-invitation">
+              <div className="rs-invitation-top">
+                <span className="rs-invitation-icon">&#8226;</span>
+                <span className="rs-invitation-msg">{error.message}</span>
+              </div>
+              <div className="rs-invitation-actions">
+                <button type="button" className="rs-invitation-btn" onClick={() => onSignIn("github")}>
+                  github
+                </button>
+                <button type="button" className="rs-invitation-btn" onClick={() => onSignIn("google")}>
+                  google
+                </button>
+              </div>
             </div>
           </div>
-        </section>
+        </div>
       );
     }
 
     return (
-      <section className="row error-enter">
-        <div className="row-label row-label--accent">Error</div>
-        <div className="error-body">
-          <div className="error-top">
-            <span className="error-icon">!</span>
-            <span className="error-msg">{error.message}</span>
+      <div className="rs-verdict">
+        {head}
+        <div className="rs-verdict-body">
+          <div className="rs-error">
+            <div className="rs-error-top">
+              <span className="rs-error-icon">!</span>
+              <span className="rs-error-msg">{error.message}</span>
+            </div>
+            <span className="rs-error-detail">{error.detail}</span>
+            {error.retryable && (
+              <button type="button" className="rs-retry" onClick={onRetry}>
+                <span>try again</span>
+                <span>&#8594;</span>
+              </button>
+            )}
           </div>
-          <span className="error-detail">{error.detail}</span>
-          {error.retryable && (
-            <button type="button" className="retry" onClick={onRetry}>
-              <span>try again</span>
-              <span>&#8594;</span>
-            </button>
-          )}
         </div>
-      </section>
+      </div>
     );
   }
 
   return (
-    <div className="result-enter">
-      <div ref={cardRef}>
-        <section className="row row--thin">
-          <div className="row-label row-label--accent">
-            Roast{import.meta.env.DEV && modelUsed ? ` · ${modelUsed}` : ""}
-          </div>
-          <div className="out-body">
-            <p className="roast-body">{roast}</p>
-          </div>
-        </section>
-
-        <section className="row meta-row">
-          <div className="row-label" />
-          <div className="meta-line">
-            {type} · {personaName} · {severity}
-            {signedIn ? " · saved" : ""}
-          </div>
-        </section>
-
-        <section className="row">
-          <div className="row-label fixes-label">
-            Fixes<br className="fixes-label-break" />
-            <span className="fixes-label-count">
-              {checked.length}/{tips.length}
-            </span>
-          </div>
-          <div>
-            {tips.map((tip, i) => {
-              const isChecked = checked.includes(i);
-              return (
-                <label key={i} className={`fix-row${isChecked ? " is-checked" : ""}`}>
-                  <span className="fix-row-checkbox">
-                    <input
-                      type="checkbox"
-                      className="fix-row-checkbox-input"
-                      checked={isChecked}
-                      onChange={() => toggle(i)}
-                    />
-                    {isChecked && "✓"}
-                  </span>
-                  <span className="fix-row-text">{tip}</span>
-                </label>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      <section className="row">
-        <div className="row-label">Chat</div>
-        {signedIn ? (
-          <div className="start-chat-body">
-            <button type="button" className="start-chat-cta" onClick={onStartChat} disabled={startingChat}>
-              <span>{startingChat ? "starting…" : `keep talking to ${personaName}`}</span>
-              <span>&#8594;</span>
-            </button>
-            {chatError && <p className="start-chat-error">Couldn't start that conversation — {chatError}</p>}
-          </div>
-        ) : (
-          <div className="invitation-body">
-            <div className="invitation-top">
-              <span className="invitation-icon">&#8226;</span>
-              <span className="invitation-msg">Sign in to keep talking to {personaName}.</span>
-            </div>
-            <div className="invitation-actions">
-              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
-                github
-              </button>
-              <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
-                google
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="row">
-        <div className="row-label" />
-        <div className="actions-grid">
-          <button
-            type="button"
-            className={`action-btn action-btn--share${copied ? " is-copied" : ""}`}
-            onClick={handleShare}
-          >
-            {copied ? "copied." : "share roast"}
+    <VerdictCard
+      ref={cardRef}
+      identifier={identifier}
+      type={type}
+      severity={severity}
+      persona={persona}
+      modelUsed={modelUsed}
+      roast={roast}
+      tips={tips}
+      checked={checked}
+      onToggle={toggle}
+    >
+      <div className="rs-actions">
+        <div className="rs-actions-left">
+          <button type="button" className={`rs-action-btn${copied ? " is-copied" : ""}`} onClick={handleShare}>
+            {copied ? "copied." : "share"}
           </button>
-          <button type="button" className="action-btn" onClick={handleSaveAsImage} disabled={generating}>
-            {generating ? "generating..." : "save as image"}
+          <button type="button" className="rs-action-btn rs-action-btn--accent" onClick={handleSaveAsImage} disabled={generating}>
+            {generating ? "generating…" : "export card"}
           </button>
-          <button type="button" className="action-btn" onClick={onRoastAnother}>
-            roast another
+          <button type="button" className="rs-action-btn" onClick={onRoastAnother}>
+            try another
           </button>
         </div>
-      </section>
-    </div>
+
+        {signedIn ? (
+          <button type="button" className="rs-cta-btn" onClick={onStartChat} disabled={startingChat}>
+            <span>{startingChat ? "starting…" : "fight me"}</span>
+            <span>&#8594;</span>
+          </button>
+        ) : (
+          <span className="rs-invitation-actions">
+            <span className="rs-error-detail">sign in to chat</span>
+            <button type="button" className="rs-invitation-btn" onClick={() => onSignIn("github")}>
+              github
+            </button>
+            <button type="button" className="rs-invitation-btn" onClick={() => onSignIn("google")}>
+              google
+            </button>
+          </span>
+        )}
+      </div>
+      {chatError && <p className="rs-cta-error">Couldn't start that conversation &mdash; {chatError}</p>}
+    </VerdictCard>
   );
 }

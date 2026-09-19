@@ -3,33 +3,14 @@ import { Link, useOutletContext } from "react-router-dom";
 import { getConversations, deleteConversation } from "../lib/openai";
 import { personaName } from "../lib/personas";
 import { formatDate, lastMessagePreview } from "../lib/chatHelpers";
-import ChatLockedPanel from "../components/ChatLockedPanel";
+import SignInGate from "../components/SignInGate";
 
-// Count-aware closing panel, same role as History.jsx's nextPanelCopy — the list's own
-// terminator, no separate footer CTA. "run a roast" is the only way into a conversation
-// that doesn't already exist (see CLAUDE.md's "Chat" section: both real entry points,
-// a finished roast or a history row, skip this list and open /chat/:id directly).
-function nextPanelCopy(count) {
-  if (count === 0) {
-    return {
-      label: "Empty",
-      title: "Nothing here yet.",
-      body: "Finish a roast and keep talking to the voice that gave it to you — that's how every conversation here starts.",
-      cta: "run a roast",
-    };
-  }
-  return {
-    label: "Next",
-    title: count === 1 ? "One conversation going." : `${count} conversations going.`,
-    body: "Start another from any finished roast, or from a row in your history.",
-    cta: "run a roast",
-  };
-}
-
-// Signed-in only — a signed-out visitor gets a locked panel here (never a redirect, so a
-// shared /chat link isn't a dead end — same reasoning as History.jsx). Landing on /chat
-// directly shows this list; both real entry points into a conversation (a finished roast,
-// a history row) skip straight to /chat/:id instead.
+// Signed-in only — a signed-out visitor gets the full-page sign-in gate instead of any
+// chat UI (see SignInGate.jsx). Landing on /chat directly shows this list; both
+// real entry points into a conversation (a finished roast, a history row) skip straight
+// to /chat/:id instead — this list is only reached by typing/sharing the bare /chat URL
+// or by an explicit "conversations" link, so it doesn't need its own separate mockup;
+// built here in the same visual language as /chat/:id (flagged for review).
 export default function ChatList() {
   const { session, signIn } = useOutletContext();
   const signedIn = Boolean(session);
@@ -94,115 +75,123 @@ export default function ChatList() {
     }
   }
 
-  const next = nextPanelCopy(conversations.length);
+  if (!signedIn) {
+    return (
+      <SignInGate
+        signIn={signIn}
+        title="Sign in to enter the arena"
+        copy="Conversations pick up in the same voice that roasted you and carry that roast as context the whole way through. Sign in to open one from a finished roast or a saved one in your history."
+      />
+    );
+  }
 
   return (
-    <div>
-      <section className="hero">
-        <div className="hero-main">
-          <h1 className="hero-title hero-title--small">Chat</h1>
-          <div className="hero-rule hero-rule--small" />
-          <p className="hero-copy">
-            {signedIn
-              ? "Every conversation you have going, newest activity first. Open one to keep talking."
-              : "Chat is kept for signed-in accounts only."}
-          </p>
-        </div>
+    <div className="roaster-studio">
+
+      <section className="rs-hero">
+        <span className="rs-hero-badge">&#9889; Rebuttal Arena</span>
+        <h1 className="rs-hero-title">Your Conversations</h1>
+        <p className="rs-hero-copy">
+          Every conversation you have going, newest activity first. Open one to keep
+          talking to the voice that roasted you.
+        </p>
       </section>
 
-      {!signedIn && <ChatLockedPanel signIn={signIn} />}
-
-      {signedIn && loading && (
-        <section className="row">
-          <div className="row-label">Open</div>
-          <div className="idle-body">
-            <span className="idle-label">loading…</span>
-          </div>
-        </section>
-      )}
-
-      {signedIn && !loading && error && (
-        <section className="row">
-          <div className="row-label row-label--accent">Error</div>
-          <div className="error-body">
-            <div className="error-top">
-              <span className="error-icon">!</span>
-              <span className="error-msg">Couldn't load your conversations.</span>
+      <div className="rs-page">
+        <div className="rs-col-controls">
+          {loading && (
+            <div className="rs-card">
+              <span className="rs-idle-copy">loading…</span>
             </div>
-            <span className="error-detail">{error}</span>
-          </div>
-        </section>
-      )}
+          )}
 
-      {signedIn && !loading && !error && (
-        <>
-          {conversations.length > 0 && (
-            <section className="row">
-              <div className="row-label">
-                Open <span className="history-list-label">{conversations.length}</span>
+          {!loading && error && (
+            <div className="rs-card">
+              <div className="rs-error">
+                <div className="rs-error-top">
+                  <span className="rs-error-icon">!</span>
+                  <span className="rs-error-msg">Couldn't load your conversations.</span>
+                </div>
+                <span className="rs-error-detail">{error}</span>
               </div>
-              {deleteError && <p className="hist-delete-error">Couldn't delete that conversation — {deleteError}</p>}
-              <div>
+            </div>
+          )}
+
+          {!loading && !error && conversations.length === 0 && (
+            <div className="rs-card">
+              <div className="rs-idle">
+                <span className="rs-idle-icon">&#9678;</span>
+                <span className="rs-idle-title">Nothing here yet</span>
+                <p className="rs-idle-copy">
+                  Finish a roast and keep talking to the voice that gave it to you —
+                  that's how every conversation here starts.
+                </p>
+                <Link to="/" className="rs-cta-btn">
+                  <span>run a roast</span>
+                  <span>&#8594;</span>
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && conversations.length > 0 && (
+            <div className="rs-card">
+              <div className="rs-field-head">
+                <span className="rs-field-label">Open conversations</span>
+                <span className="rs-field-hint">{conversations.length}</span>
+              </div>
+
+              {deleteError && <p className="rs-convo-error">Couldn't delete that conversation — {deleteError}</p>}
+
+              <div className="rs-convo-grid">
                 {conversations.map((c) =>
                   confirmingId === c.id ? (
-                    <div key={c.id} className="hist-row hist-row-confirm">
-                      <span className="hist-row-confirm-text">Delete this conversation? This can't be undone.</span>
-                      <span className="hist-row-confirm-actions">
+                    <div key={c.id} className="rs-convo-confirm">
+                      <span className="rs-convo-confirm-text">Delete this conversation? This can't be undone.</span>
+                      <span className="rs-convo-confirm-actions">
                         <button
                           type="button"
-                          className="hist-row-confirm-yes"
+                          className="rs-convo-confirm-yes"
                           onClick={() => handleConfirmDelete(c.id)}
                           disabled={deletingId === c.id}
                         >
                           {deletingId === c.id ? "deleting…" : "delete"}
                         </button>
-                        <button type="button" className="hist-row-confirm-cancel" onClick={() => setConfirmingId(null)}>
+                        <button type="button" className="rs-convo-confirm-cancel" onClick={() => setConfirmingId(null)}>
                           cancel
                         </button>
                       </span>
                     </div>
                   ) : (
-                    <div key={c.id} className="hist-row">
-                      <Link to={`/chat/${c.id}`} className="chat-row-open">
-                        <span className="chat-row-top">
-                          <span className="chat-row-kicker">
-                            {(personaName(c.persona) ?? c.persona).toUpperCase()}
-                            {c.type ? ` · ${c.type.toUpperCase()}` : ""}
-                          </span>
-                          <span className="chat-row-date">{formatDate(c.createdAt)}</span>
-                        </span>
-                        <span className="chat-row-message">{lastMessagePreview(c.lastMessage)}</span>
+                    <div key={c.id} className="rs-convo-row">
+                      <Link to={`/chat/${c.id}`} className="rs-convo-link">
+                        <div className="rs-convo-top">
+                          <span className="rs-convo-persona">{personaName(c.persona) ?? c.persona}</span>
+                          {c.type && <span className="rs-convo-kicker">{c.type}</span>}
+                        </div>
+                        <p className="rs-convo-message">{lastMessagePreview(c.lastMessage)}</p>
+                        <div className="rs-convo-foot">
+                          <span className="rs-convo-badge">{c.type ? c.type.toUpperCase() : "CHAT"}</span>
+                          <span>{formatDate(c.createdAt)}</span>
+                        </div>
                       </Link>
-                      <button type="button" className="hist-row-delete" onClick={() => setConfirmingId(c.id)}>
+                      <button type="button" className="rs-convo-delete" onClick={() => setConfirmingId(c.id)}>
                         delete
                       </button>
                     </div>
                   )
                 )}
-                {cursor && (
-                  <button type="button" className="hist-load-more" onClick={loadMore} disabled={loadingMore}>
-                    {loadingMore ? "loading…" : "load more"}
-                  </button>
-                )}
               </div>
-            </section>
-          )}
 
-          <section className="row history-next-row">
-            <div className="row-label">{next.label}</div>
-            <div className="history-next-panel">
-              <div className="history-next-copy">
-                <div className="history-next-title">{next.title}</div>
-                <p className="history-next-body">{next.body}</p>
-              </div>
-              <Link to="/" className="history-next-cta">
-                {next.cta}
-                <span>&#8594;</span>
-              </Link>
+              {cursor && (
+                <button type="button" className="rs-convo-load-more" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? "loading…" : "load more"}
+                </button>
+              )}
             </div>
-          </section>
-        </>
-      )}
+          )}
+        </div>
+      </div>
     </div>
   );
 }

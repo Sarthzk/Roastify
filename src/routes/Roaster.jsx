@@ -3,11 +3,11 @@ import { useNavigate, useOutletContext } from "react-router-dom";
 import InputForm from "../components/InputForm";
 import RoastCard from "../components/RoastCard";
 import { getRoast, getRateLimitStatus, getHistory, startConversation } from "../lib/openai";
-import { DEFAULT_PERSONA, personaName } from "../lib/personas";
+import { DEFAULT_PERSONA } from "../lib/personas";
 import { describeError } from "../lib/roasterErrors";
 
 export default function Roaster() {
-  const { session, signIn, openSignIn } = useOutletContext();
+  const { session, signIn } = useOutletContext();
   const navigate = useNavigate();
 
   const [url, setUrl] = useState("");
@@ -28,7 +28,6 @@ export default function Roaster() {
   const instagramEnabled = rateLimitStatus?.instagramEnabled ?? true;
   const signedIn = Boolean(session);
   const instagramOpen = instagramEnabled && signedIn;
-  const rateLimit = { limit: rateLimitStatus?.limit ?? 3, remaining: rateLimitStatus?.remaining ?? 3 };
   const disabled = !url.trim() || loading;
 
   // Refetches on every session change (sign-in, sign-out, initial resolution) — the
@@ -140,90 +139,67 @@ export default function Roaster() {
   }
 
   return (
-    <div>
-      <section className="hero">
-        <div className="hero-main">
-          <h1 className="hero-title">
-            Get
-            <br />
-            roasted
-          </h1>
-          <div className="hero-rule" />
-          <p className="hero-copy">
-            Drop a link or a PDF. The machine reads it, says out loud what your profile is
-            actually telling people, then tells you how to fix it.
-          </p>
-        </div>
+    <div className="roaster-studio">
+      <section className="rs-hero">
+        <span className="rs-hero-badge">&#9889; AI Critique Studio</span>
+        <h1 className="rs-hero-title">Get roasted</h1>
+        <p className="rs-hero-copy">
+          Feed us your GitHub, LinkedIn, Instagram, or resume. We strip the corporate
+          buzzwords, inspect your real output, and deliver cold, constructive reality.
+        </p>
       </section>
 
-      <InputForm
-        key={resetKey}
-        url={url}
-        onUrlChange={setUrl}
-        type={type}
-        onTypeChange={handleTypeChange}
-        severity={severity}
-        onSeverityChange={setSeverity}
-        persona={persona}
-        onPersonaChange={setPersona}
-        model={model}
-        onModelChange={setModel}
-        onSubmit={handleSubmit}
-        loading={loading}
-        instagramEnabled={instagramEnabled}
-        signedIn={signedIn}
-        onSignIn={signIn}
-      />
-
-      <section className="submit-section">
-        <button type="button" className={`submit${loading ? " is-streaming" : ""}`} disabled={disabled} onClick={handleSubmit}>
-          <span>{loading ? "roasting" : "roast this profile"}</span>
-          <span className="submit-arrow">&#8594;</span>
-        </button>
-        {loading && (
-          <div className="progress-track">
-            <div className="progress-bar" />
-          </div>
-        )}
-        <div className="rate">
-          <span className="rate-label">
-            {rateLimitStatus?.unlimited ? (
-              "rate limit · bypassed (dev)"
-            ) : (
-              <>
-                <span className="rate-label-value">{rateLimit.remaining}</span> of {rateLimit.limit} roasts left today
-              </>
-            )}
-          </span>
-          {!rateLimitStatus?.unlimited &&
-            (signedIn ? (
-              <span className="rate-saved">saved to your history</span>
-            ) : (
-              <button type="button" className="rate-upgrade" onClick={openSignIn}>
-                sign in for 15 a day<span>&#8594;</span>
-              </button>
-            ))}
+      {/* Desktop split: controls (Target Platform + Judgment Parameters + submit) on the
+          left, the Verdict card sticky on the right — see .rs-grid in src/index.css.
+          Pure layout wrapper; collapses to one column, controls first, below 1024px. No
+          prop or state changes to either child. */}
+      <div className="rs-grid">
+        <div className="rs-col-controls">
+          <InputForm
+            key={resetKey}
+            url={url}
+            onUrlChange={setUrl}
+            type={type}
+            onTypeChange={handleTypeChange}
+            severity={severity}
+            onSeverityChange={setSeverity}
+            persona={persona}
+            onPersonaChange={setPersona}
+            model={model}
+            onModelChange={setModel}
+            onSubmit={handleSubmit}
+            loading={loading}
+            disabled={disabled}
+            instagramEnabled={instagramEnabled}
+            signedIn={signedIn}
+            onSignIn={signIn}
+          />
         </div>
-      </section>
 
-      <div ref={outputRef}>
-        <RoastCard
-          status={status}
-          roast={result?.roast ?? ""}
-          tips={result?.tips ?? []}
-          error={error}
-          type={type}
-          severity={severity}
-          personaName={personaName(persona)}
-          modelUsed={result?.modelUsed}
-          signedIn={signedIn}
-          onRetry={handleSubmit}
-          onRoastAnother={handleRoastAnother}
-          onSignIn={signIn}
-          onStartChat={handleStartChat}
-          startingChat={startingChat}
-          chatError={chatError}
-        />
+        <div className="rs-col-verdict" ref={outputRef}>
+          <RoastCard
+            status={status}
+            roast={result?.roast ?? ""}
+            tips={result?.tips ?? []}
+            error={error}
+            type={type}
+            // Only github/instagram's `url` is a real, displayable identifier (a handle
+            // or profile URL) — linkedin/resume's `url` field holds pasted/PDF-extracted
+            // body text, which would be a useless (and ugly) thing to show as a target
+            // header, so it's deliberately withheld for those two.
+            identifier={type === "github" || type === "instagram" ? url : null}
+            severity={severity}
+            persona={persona}
+            modelUsed={result?.modelUsed}
+            signedIn={signedIn}
+            onRetry={handleSubmit}
+            onRoastAnother={handleRoastAnother}
+            onSignIn={signIn}
+            onStartChat={handleStartChat}
+            startingChat={startingChat}
+            chatError={chatError}
+          />
+        </div>
       </div>
     </div>
   );

@@ -15,17 +15,6 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
 
 ## Open
 
-### Needs a decision
-- **Zoom/breakpoint compounding** (found 2026-08-23, Section 13 below). The page
-  actually renders at ~91.3% effective scale, not the intended 97% — `zoom` applied to
-  three nested ancestors (`html`, `body`, `#root`) compounds multiplicatively rather than
-  applying once. This was later consolidated onto `#root` alone *at the same already-
-  compounded value* (Section 15) so the visual result didn't change — but the underlying
-  question from Section 13 is still open: was 91.3% actually the intended final scale, or
-  should this be corrected to a true flat 97% (which would also mean re-deriving the
-  breakpoint values — see the table in Section 13 for both options)? Needs a decision
-  before either the zoom value or the breakpoints themselves are worth touching.
-
 ### Needs the user (infrastructure/account settings, not code — matches GYM_TASKS.md's
 "Blocked" section)
 - Bot protection (Cloudflare Turnstile or hCaptcha) in front of `/api/roast` — needs
@@ -44,6 +33,30 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
   history already exists (Section 14/15), so this no longer needs doing.
 
 ### Small open item
+- [x] ~~**Privacy still shows a dark v4 chrome body under the light header/footer.**~~ Done 2026-09-19 — Privacy rebuilt to the light Neu-Brutalist system (see WORK_LOG.md v8).
+- [x] ~~**History's search/persona/source filters are client-side only.**~~ Done 2026-09-19 — real server-side filters in `api/history.js`.
+- [x] **Mobile header** (<=600px) collapses to logo + quota + hamburger, nav/account in a slide-down panel. Done 2026-09-19 (real-device touch not verified).
+- **Chat's "Audit Diagnostics"-equivalent metrics were dropped outright, not
+  hardcoded.** The Chat redesign (2026-09-18) flagged and left out several mockup stats
+  with no backend field (ego integrity/ego defended, per-message severity/ego-deduction
+  scores, evidence citations, tech-stack audit, burns-incurred/tokens-consumed). Home's
+  own equivalent mockup stats (Audit Diagnostics tiles, Key Indictments) went through a
+  hardcode-then-remove cycle earlier the same day and are gone now too, so both pages
+  currently land in the same place — no fabricated stats anywhere on either page. Just a
+  note for context, not something needing a decision.
+- **Chat's "re-run profile audit" and "export verdict dossier" buttons are unbuilt.**
+  The mockup showed both in the Telemetry & Quota panel; neither has a description in
+  the task or an existing mechanism to call (re-running a roast from inside a
+  conversation, exporting a chat transcript/image). Needs a product decision before
+  either gets built.
+- **Chat's per-conversation draft auto-save (localStorage) is new, unrequested surface
+  area.** Added during the Chat redesign so the mockup's "DRAFT AUTO-SAVED" label would
+  be honest rather than fabricated — small and client-only, but worth knowing it's there
+  since nothing asked for it directly.
+- **Real (non-dev-bypassed) chat rate-limit-reached state is unverified.** `NODE_ENV=
+  development` bypasses the chat tier's Upstash check the same way it does the roast
+  flow's, so the rebuttals-remaining meter and the 429 error path were only exercised
+  against the dev bypass, never a real 60/day limit actually being hit.
 - **Live prompt-injection verification** (Section 6, 2026-08-19). The fencing mechanism
   (`fenceUntrustedContent()`, `UNTRUSTED_DATA_NOTICE`) is built and has real unit test
   coverage, but nobody has actually run a live model call against a real scraped bio
@@ -1336,4 +1349,36 @@ and the verification detail.
   `formatDate`, `lastMessagePreview`) plus new list-mode coverage in
   `api/conversations.test.js`. Lint and build clean. Extended `src/index.css`'s existing
   token system for every new color — no new hardcoded hex.
+</details>
+
+<details>
+<summary><strong>21. Stitch redesign: Home, Chat, History, Privacy</strong> (2026-09-16) — dark neo-brutalist visual system from Stitch MCP; presentation only, zoom hack removed, resolves the Section 13 zoom/breakpoint question by deleting the zoom entirely</summary>
+
+Full writeup in `WORK_LOG.md`'s 2026-09-16 (v4) entry — this is a compressed summary.
+
+- **Source**: Stitch project "Roastify Frontend Redesign" (`projects/7127362638254684669`),
+  4 screens mapped 1:1 to `/`, `/chat`+`/chat/:id`, `/history`, `/privacy`. One screen's
+  cached thumbnail was stale (showed the wrong page) — caught by reading the actual HTML
+  export instead of trusting the screenshot.
+- **Resolves the "needs a decision" zoom item above**: the old `#root { zoom }` hack (and
+  `--root-zoom`, which compensated `--touch-44`/`--touch-48` and every `100dvh` for it) is
+  removed outright, not adjusted — this design's spacing was sized directly against the
+  real viewport, so the 91.3%-vs-97% question no longer applies to anything.
+- **A lot of the mockup was fabricated** (per-card ATS/damage/jargon scores, hero vanity
+  stats, a fictional Instagram "upload screenshots for OCR" input path, Privacy's entire
+  "Data Actions & Live Telemetry" section, and several outright-wrong retention claims) —
+  none of it is backed by a real endpoint, so none of it was built. See WORK_LOG.md for
+  the full list of what was left out and why.
+- **Structural, not just color**: Home gained a real 2-column desktop split
+  (`.studio-grid`); History/Chat rows get Stitch-style `.01`/`.02`… numbering via a CSS
+  counter (no markup change); persona cards gained a decorative flavor tag
+  (`src/lib/personas.js`'s new `tag` field); severity pills gained per-tier coloring via a
+  value-derived class in `InputForm.jsx`; Privacy's account-delete flow became a "type to
+  unlock" pattern (still calls the same `deleteAccount()`).
+- **Verification**: `npm run lint`/`npm test` (225/225, no selector changes — none of the
+  existing tests touch the DOM)/`npm run build` all clean; all 4 routes loaded live with
+  zero console errors; mobile (including the trickiest piece, the chat thread's fixed
+  shell) verified for real via the same same-origin-iframe + `getComputedStyle()`
+  technique Section 20 established, not just screenshotted. Not verified: exact pixel
+  fidelity against the Stitch mockup, and real-device rendering.
 </details>

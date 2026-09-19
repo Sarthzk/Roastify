@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { PERSONAS } from "../lib/personas";
+import { GithubIcon, LinkedinIcon, InstagramIcon, ResumeIcon } from "./PlatformIcons";
 import {
   sourceState,
   classifyUploadFile,
@@ -12,33 +13,42 @@ import {
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-// Order matches the v3 design: the three open sources first, instagram (the only one
-// that can be locked or disabled) last — a source is never hidden, so this ordering
-// doesn't need to keep link/pdf kinds adjacent the way the old 4-card grid did.
+// Order matches the Stitch mockup's 4-up grid exactly (github/linkedin/resume/
+// instagram) — unlike the previous dark redesign, which moved instagram (the only
+// source that can be locked/disabled) to the end. `demoValue` backs the "Load Demo"
+// button below.
 const PROFILE_TYPES = [
-  { value: "github", name: "github", kind: "link", label: "Profile url", placeholder: "https://github.com/username" },
+  { value: "github", name: "GitHub", icon: <GithubIcon />, kind: "link", label: "Target url or username", placeholder: "e.g. github.com/username", demoValue: "github.com/sarthzk" },
   {
     value: "linkedin",
-    name: "linkedin",
+    name: "LinkedIn",
+    icon: <LinkedinIcon />,
     kind: "pdf",
     label: "Profile pdf",
-    hint: "Open your LinkedIn profile → More → Save to PDF",
+    hint: "Open your LinkedIn profile → More → Save to PDF.",
     dropLabel: "drop your linkedin pdf",
     pastePlaceholder: "…or paste the text of your profile here.",
+    demoValue: "Senior Growth Strategist & Synergy Architect. Passionate about leveraging cross-functional paradigm shifts to disrupt legacy thinking. 500+ connections.",
   },
   {
     value: "resume",
-    name: "resume",
+    name: "Resume",
+    icon: <ResumeIcon />,
     kind: "pdf",
     label: "Resume pdf",
     hint: "PDF works best. Plain text is fine too.",
     dropLabel: "drop your resume pdf",
     pastePlaceholder: "…or paste your resume text here.",
+    demoValue: "OBJECTIVE: Dynamic self-starter seeking to leverage synergies. EXPERIENCE: Intern, did some stuff with spreadsheets. SKILLS: Microsoft Word, Team Player, Fast Learner.",
   },
-  { value: "instagram", name: "instagram", kind: "link", label: "Profile url", placeholder: "https://instagram.com/username", gated: true },
+  { value: "instagram", name: "Insta", icon: <InstagramIcon />, kind: "link", label: "Target url or username", placeholder: "e.g. instagram.com/username", demoValue: "instagram.com/alex_codes_lifestyle", gated: true },
 ];
 
-const SEVERITIES = ["mild", "medium", "destroy me"];
+const SEVERITIES = [
+  { value: "mild", label: "Mild", hintClass: "" },
+  { value: "medium", label: "Medium", hintClass: "" },
+  { value: "destroy me", label: "Destroy Me", hintClass: "rs-field-hint--nuclear" },
+];
 
 // Dev-only comparison options — production always uses the server's pinned default
 // (see resolveProductionSafeModelOption in api/roast.js) regardless of what's sent.
@@ -60,6 +70,7 @@ export default function InputForm({
   onModelChange,
   onSubmit,
   loading,
+  disabled,
   instagramEnabled,
   signedIn,
   onSignIn,
@@ -68,7 +79,7 @@ export default function InputForm({
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [dragging, setDragging] = useState(false);
-  // Which inline prompt is showing beneath the source grid — null, "locked" (needs
+  // Which inline prompt is showing beneath the platform grid — null, "locked" (needs
   // sign-in), or "disabled" (kill switch off). Set by clicking a non-open source cell
   // instead of selecting it.
   const [prompt, setPrompt] = useState(null);
@@ -76,6 +87,7 @@ export default function InputForm({
 
   const active = PROFILE_TYPES.find((t) => t.value === type) || PROFILE_TYPES[0];
   const isUploadType = active.kind === "pdf";
+  const activeSeverity = SEVERITIES.find((s) => s.value === severity) || SEVERITIES[1];
 
   // Switching source clears whatever was typed/uploaded for the previous one — the file
   // confirmation card and any upload error/status are presentation state local to this
@@ -112,6 +124,18 @@ export default function InputForm({
       setPrompt(null);
     } else {
       setPrompt(state);
+    }
+  }
+
+  // No equivalent field exists to "demo" for an upload type beyond prefilling the paste
+  // textarea with sample text — there's no sample file to attach. Link types fill the
+  // URL field, matching the mockup's own "Load Demo" behavior exactly.
+  function handleLoadDemo() {
+    onUrlChange(active.demoValue);
+    if (isUploadType) {
+      setFileInfo(null);
+      setUploadStatus("");
+      setUploadError("");
     }
   }
 
@@ -182,227 +206,249 @@ export default function InputForm({
   const promptIsLock = prompt === "locked";
 
   return (
-    <div className="input-form">
-      {/* Source row */}
-      <section className="row">
-        <div className="row-label">Source</div>
-        <div>
-          <div className="source-grid">
-            {PROFILE_TYPES.map((t) => {
-              const state = sourceState(t, { instagramEnabled, signedIn });
-              const selected = type === t.value && state === "open";
-              let tagText = t.kind === "link" ? "link" : "pdf";
-              if (state === "locked") tagText = "sign in";
-              if (state === "disabled") tagText = "off";
-              return (
-                <button
-                  key={t.value}
-                  type="button"
-                  className={`source-card${selected ? " is-selected" : ""}${state === "locked" ? " is-locked" : ""}${state === "disabled" ? " is-disabled" : ""}`}
-                  disabled={loading}
-                  onClick={() => handleSourceClick(t)}
-                >
-                  <span className="source-card-bar" />
-                  <span className="source-card-name">{t.name}</span>
-                  <span className="source-card-tag">{tagText}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {prompt && (
-            <div className={`source-prompt${promptIsLock ? " is-invitation" : ""}`}>
-              <div className="source-prompt-body">
-                <span className="source-prompt-mark">{promptIsLock ? "•" : "—"}</span>
-                <span className="source-prompt-text">
-                  {promptIsLock
-                    ? "Instagram needs an account — it's the only source that costs us to run. Sign in and your daily limit goes to 15 as well."
-                    : "Instagram is temporarily unavailable. The other three sources are unaffected."}
-                </span>
-              </div>
-              {promptIsLock && (
-                <div className="source-prompt-actions">
-                  <button type="button" className="source-prompt-provider" onClick={() => onSignIn("github")}>
-                    github
-                  </button>
-                  <button type="button" className="source-prompt-provider" onClick={() => onSignIn("google")}>
-                    google
-                  </button>
-                </div>
-              )}
-              <button type="button" className="source-prompt-close" onClick={() => setPrompt(null)}>
-                close
+    <div className="rs-card">
+      {/* 01. Target platform */}
+      <div>
+        <div className="rs-field-head">
+          <span className="rs-field-label">01. Target platform</span>
+          <span className="rs-field-hint">Select source</span>
+        </div>
+        <div className="rs-platform-grid">
+          {PROFILE_TYPES.map((t) => {
+            const state = sourceState(t, { instagramEnabled, signedIn });
+            const selected = type === t.value && state === "open";
+            let tagText = null;
+            if (state === "locked") tagText = "sign in";
+            if (state === "disabled") tagText = "off";
+            return (
+              <button
+                key={t.value}
+                type="button"
+                className={`rs-platform-btn${selected ? " is-selected" : ""}${state === "locked" ? " is-locked" : ""}${state === "disabled" ? " is-disabled" : ""}`}
+                disabled={loading}
+                onClick={() => handleSourceClick(t)}
+              >
+                <span className="rs-platform-icon">{t.icon}</span>
+                <span>{t.name}</span>
+                {tagText && <span className="rs-platform-tag">{tagText}</span>}
               </button>
-            </div>
-          )}
+            );
+          })}
         </div>
-      </section>
 
-      {/* Input row */}
-      <section className="row">
-        <div className="row-label">{active.label}</div>
-        <div>
-          {!isUploadType && (
-            <div className="link-row">
-              <span className="link-chevron">&#8250;</span>
-              <input
-                type="text"
-                className="link-input"
-                value={url}
-                onChange={(e) => onUrlChange(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder={active.placeholder}
-                disabled={loading}
-              />
-            </div>
-          )}
-
-          {isUploadType && (
-            <div className="file-body">
-              <div className="file-hint">
-                <span className="file-hint-chevron">&#8250;</span>
-                <span>{active.hint}</span>
+        {prompt && (
+          <div className="rs-source-prompt" style={{ marginTop: "10px" }}>
+            <span className="rs-source-prompt-text">
+              {promptIsLock
+                ? "Instagram needs an account — it's the only source that costs us to run. Sign in and your daily limit goes to 15 as well."
+                : "Instagram is temporarily unavailable. The other three sources are unaffected."}
+            </span>
+            {promptIsLock && (
+              <div className="rs-source-prompt-actions">
+                <button type="button" className="rs-source-prompt-btn" onClick={() => onSignIn("github")}>
+                  github
+                </button>
+                <button type="button" className="rs-source-prompt-btn" onClick={() => onSignIn("google")}>
+                  google
+                </button>
               </div>
+            )}
+            <button type="button" className="rs-source-prompt-close" onClick={() => setPrompt(null)}>
+              close
+            </button>
+          </div>
+        )}
+      </div>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt,application/pdf,text/plain"
-                onChange={handleFileInputChange}
-                disabled={loading}
-                className="hidden"
-              />
+      {/* 02. Target input */}
+      <div>
+        <div className="rs-field-head">
+          <span className="rs-field-label">02. {active.label}</span>
+          <button type="button" className="rs-demo-btn" onClick={handleLoadDemo} disabled={loading}>
+            Load demo
+          </button>
+        </div>
 
-              {!fileInfo && (
-                <div
-                  className={`drop${dragging ? " is-dragging" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={handleDropZoneKeyDown}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (!dragging) setDragging(true);
+        {!isUploadType && (
+          <input
+            type="text"
+            className="rs-input"
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder={active.placeholder}
+            disabled={loading}
+          />
+        )}
+
+        {isUploadType && (
+          <div>
+            <p className="rs-upload-hint">{active.hint}</p>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,application/pdf,text/plain"
+              onChange={handleFileInputChange}
+              disabled={loading}
+              className="hidden"
+            />
+
+            {!fileInfo && (
+              <div
+                className={`rs-dropzone${dragging ? " is-dragging" : ""}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={handleDropZoneKeyDown}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!dragging) setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
+                <span className="rs-dropzone-arrow">↓</span>
+                <span className="rs-dropzone-label">{dragging ? "release to read it" : active.dropLabel}</span>
+                <span className="rs-dropzone-browse">click to browse</span>
+              </div>
+            )}
+
+            {fileInfo && (
+              <div className="rs-file-row">
+                <span className="rs-file-check">✓</span>
+                <span className="rs-file-name">{fileInfo.name}</span>
+                <button
+                  type="button"
+                  className="rs-file-replace"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFileInfo(null);
+                    setUploadStatus("");
                   }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={handleDrop}
                 >
-                  <span className="drop-arrow">&#8595;</span>
-                  <span className="drop-label">{dragging ? "release to read it" : active.dropLabel}</span>
-                  <span className="drop-browse">click to browse</span>
-                </div>
-              )}
-
-              {fileInfo && (
-                <div className="file-row">
-                  <span className="file-check">&#10003;</span>
-                  <span className="file-name">{fileInfo.name}</span>
-                  <button
-                    type="button"
-                    className="file-replace"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFileInfo(null);
-                      setUploadStatus("");
-                    }}
-                  >
-                    replace
-                  </button>
-                </div>
-              )}
-
-              <div className="paste-divider">
-                <span className="paste-divider-label">or paste the text</span>
-                <span className="paste-divider-rule" />
+                  replace
+                </button>
               </div>
-              <textarea
-                className="paste-area"
-                value={url}
-                onChange={(e) => onUrlChange(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder={active.pastePlaceholder}
-                disabled={loading}
-              />
+            )}
 
-              {uploadError ? (
-                <p className="upload-error">{uploadError}</p>
-              ) : uploadStatus ? (
-                <p className="upload-error" style={{ color: "var(--ink-2)" }}>
-                  {uploadStatus}
-                </p>
-              ) : null}
+            <div className="rs-paste-divider">
+              <span className="rs-paste-divider-label">or paste the text</span>
+              <span className="rs-paste-divider-rule" />
             </div>
-          )}
-        </div>
-      </section>
+            <textarea
+              className="rs-paste-area"
+              value={url}
+              onChange={(e) => onUrlChange(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder={active.pastePlaceholder}
+              disabled={loading}
+            />
 
-      {/* Voice row — persona only, three across */}
-      <section className="row">
-        <div className="row-label">Voice</div>
-        <div className="persona-grid">
+            {uploadError ? (
+              <p className="rs-upload-error">{uploadError}</p>
+            ) : uploadStatus ? (
+              <p className="rs-upload-status">{uploadStatus}</p>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* 03. Roast intensity */}
+      <div>
+        <div className="rs-field-head">
+          <span className="rs-field-label">03. Roast intensity</span>
+          <span className={`rs-field-hint ${activeSeverity.hintClass}`}>{activeSeverity.label}</span>
+        </div>
+        <div className="rs-severity-grid">
+          {SEVERITIES.map((sv) => {
+            const selected = severity === sv.value;
+            const modifier = sv.value === "destroy me" ? "destroy-me" : sv.value;
+            return (
+              <button
+                key={sv.value}
+                type="button"
+                className={`rs-severity-btn rs-severity-btn--${modifier}${selected ? " is-selected" : ""}`}
+                disabled={loading}
+                onClick={() => onSeverityChange(sv.value)}
+              >
+                {sv.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 04. Persona */}
+      <div>
+        <div className="rs-field-head">
+          <span className="rs-field-label">04. Choose executioner persona</span>
+        </div>
+        <div className="rs-persona-list">
           {PERSONAS.map((p) => {
             const selected = persona === p.value;
             return (
               <button
                 key={p.value}
                 type="button"
-                className={`persona-cell${selected ? " is-selected" : ""}`}
+                className={`rs-persona-card${selected ? " is-selected" : ""}`}
                 disabled={loading}
                 onClick={() => onPersonaChange(p.value)}
               >
-                <span className="persona-cell-bar" />
-                <span className="persona-cell-name">{p.name}</span>
-                <span className="persona-cell-note">{p.tagline}</span>
+                <span className="rs-persona-main">
+                  <span className="rs-persona-icon">{p.icon}</span>
+                  <span className="rs-persona-body">
+                    <span className="rs-persona-name">{p.name}</span>
+                    <p className="rs-persona-note">{p.tagline}</p>
+                  </span>
+                </span>
+                <span className="rs-persona-radio">{selected && <span className="rs-persona-radio-dot" />}</span>
               </button>
             );
           })}
         </div>
-      </section>
-
-      {/* Severity row — its own row now, not a column beside persona */}
-      <section className="row">
-        <div className="row-label">Severity</div>
-        <div className="severity-row">
-          {SEVERITIES.map((sv) => {
-            const selected = severity === sv;
-            return (
-              <button
-                key={sv}
-                type="button"
-                className={`severity-cell${selected ? " is-selected" : ""}`}
-                disabled={loading}
-                onClick={() => onSeverityChange(sv)}
-              >
-                {sv}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      </div>
 
       {import.meta.env.DEV && (
-        <section className="row">
-          <div className="row-label">Model (dev)</div>
-          <div className="model-grid">
+        <div>
+          <div className="rs-field-head">
+            <span className="rs-field-label">Model (dev)</span>
+          </div>
+          <div className="rs-model-grid">
             {MODELS.map((m) => {
               const selected = model === m.value;
               return (
                 <button
                   key={m.value}
                   type="button"
-                  className={`source-card${selected ? " is-selected" : ""}`}
+                  className={`rs-platform-btn${selected ? " is-selected" : ""}`}
                   disabled={loading}
                   onClick={() => onModelChange(m.value)}
-                  style={{ minHeight: "56px" }}
+                  style={{ minHeight: "48px" }}
                 >
-                  <span className="source-card-bar" />
-                  <span className="source-card-name">{m.label}</span>
+                  {m.label}
                 </button>
               );
             })}
           </div>
-        </section>
+        </div>
       )}
+
+      {/* Primary action — inside the same bordered card as the four steps above, matching
+          the mockup's single-card anatomy (one hard shadow, not two stacked boxes). No
+          rate-limit/"saved" line here — the header's quota badge (Layout.jsx) is the one
+          place that shows today's count now, so this doesn't say it twice. */}
+      <div>
+        <button type="button" className={`rs-submit${loading ? " is-streaming" : ""}`} disabled={disabled} onClick={onSubmit}>
+          <span>{loading ? "synthesizing brutality…" : "execute roast"}</span>
+          <span>&#128293;</span>
+        </button>
+        {loading && (
+          <div className="rs-progress-track">
+            <div className="rs-progress-bar" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

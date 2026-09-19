@@ -6,6 +6,19 @@ import { reportError } from "./_lib/sentry.js";
 
 const PAGE_SIZE = 25;
 
+// Real backend counterparts of History.jsx's persona/source filter pills and search
+// box — previously client-side only (filtering whatever page was already loaded).
+// Neither `persona` nor `type` is validated against a known set here: an unrecognized
+// value just matches zero rows, same as any other filter that happens not to match
+// anything, so there's nothing meaningful to reject.
+
+// Postgres ILIKE treats a bare "%"/"_" in the search text as a wildcard — escaping them
+// (and the escape character itself) keeps a search for e.g. "50%" from silently turning
+// into a pattern match instead of a literal one.
+function escapeLikePattern(value) {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 function getQueryParams(req) {
   // req.url is a path+query string (no host) both on Vercel and in index.js's local
   // shim — the dummy base is only there because URL() requires one.
@@ -70,14 +83,30 @@ export default async function handler(req, res) {
 
   if (req.method === "DELETE") return handleDelete(req, res, client);
 
+  // `roast`/`tips` are now selected too (previously omitted) so the History page can show
+  // the real verdict quote and real fix chips per row, matching what RoastCard.jsx
+  // already shows for a fresh roast — same stored data, just not read here before.
   let query = client
     .from("roasts")
-    .select("id, type, identifier, persona, severity, created_at")
+    .select("id, type, identifier, persona, severity, roast, tips, created_at")
     .order("created_at", { ascending: false })
     .limit(PAGE_SIZE);
 
-  const cursor = getQueryParams(req).get("cursor");
+  const params = getQueryParams(req);
+  const cursor = params.get("cursor");
   if (cursor) query = query.lt("created_at", cursor);
+
+  // Real filters, applied server-side (History.jsx's filter pills/search box used to
+  // only filter whatever page was already loaded on the client — this is the backend
+  // for that, so it now searches/filters the caller's entire history, not just one page).
+  const persona = params.get("persona");
+  if (persona) query = query.eq("persona", persona);
+
+  const type = params.get("type");
+  if (type) query = query.eq("type", type);
+
+  const q = params.get("q");
+  if (q) query = query.ilike("identifier", `%${escapeLikePattern(q)}%`);
 
   const { data, error } = await query;
 

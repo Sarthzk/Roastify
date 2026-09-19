@@ -114,11 +114,19 @@ export async function getRateLimitStatus(accessToken) {
 }
 
 // `cursor` is the previous page's `nextCursor` (an ISO created_at timestamp) — omit for
-// the first page. Throws the same envelope-derived Error as getRoast on a non-2xx
-// response (SIGN_IN_REQUIRED when signed out or the token's expired, mainly).
-export async function getHistory(accessToken, cursor) {
-  const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-  const res = await fetch(`/api/history${params}`, { headers: authHeaders(accessToken) });
+// the first page. `filters` (`{ persona, type, q }`, all optional) are real server-side
+// filters (api/history.js), not client-side — passing one searches/narrows the caller's
+// entire history, not just whatever page is already loaded. Throws the same
+// envelope-derived Error as getRoast on a non-2xx response (SIGN_IN_REQUIRED when
+// signed out or the token's expired, mainly).
+export async function getHistory(accessToken, cursor, filters = {}) {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (filters.persona) params.set("persona", filters.persona);
+  if (filters.type) params.set("type", filters.type);
+  if (filters.q) params.set("q", filters.q);
+  const query = params.toString();
+  const res = await fetch(`/api/history${query ? `?${query}` : ""}`, { headers: authHeaders(accessToken) });
 
   const data = await res.json().catch(() => null);
 

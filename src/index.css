@@ -1,57 +1,88 @@
 /* ===========================================================================
-   Tokens — the v3 visual redesign's palette (colors copied verbatim from the
-   Claude Design handoff, "Roastify Enhanced v3.dc.html" — unchanged from v2).
-   Every color the app uses goes through one of these; no new hardcoded hex
-   anywhere else.
+   Tokens — the Stitch redesign's design system ("Savage Satire & Razor
+   Critique": Dark Cyber-Editorial Neo-Brutalism). Colors, type, radius and
+   shadow all come from the Stitch project "Roastify Frontend Redesign"
+   (design_md). Every color the app uses goes through one of these; no new
+   hardcoded hex anywhere else (one deliberate exception, unchanged from
+   before: RoastCard.jsx's html2canvas backgroundColor, which can't resolve a
+   custom property — see that file).
    =========================================================================== */
 :root {
-  --ground:    #000000; /* page background */
-  --ground-2:  #0a0a0a; /* roast, streaming, error, meta fills, panel fills */
-  --ground-3:  #111111; /* selected cell, disabled submit, drag-over */
-  --ground-4:  #080808; /* completed fix row */
-  --ground-5:  #0e0e0e; /* action button hover */
+  /* Ground / surface tiers — obsidian canvas, three tiers of elevation. */
+  --ground:    #09090b; /* page background — Canvas Deep */
+  --ground-2:  #121217; /* card/panel fills, streaming/error/meta fills — Surface Tier 1 */
+  --ground-3:  #18181f; /* selected cell, active/focused inputs, drag-over — Surface Tier 2 */
+  --ground-4:  #0e0e12; /* completed fix row */
+  --ground-5:  #1c1c22; /* action button hover */
 
-  --accent:    #e2b714; /* amber — brand */
-  --accent-dk: #8a7420; /* selected sublabels, selected source tag, upgrade link */
-  --accent-lt: #f0c832; /* plain-link hover state — was a hardcoded hex on `a:hover`, no
-                            token backing it; tokenized here, no visual change. */
-  /* Ink scale lifted for readability (contrast ratios against --ground, WCAG formula):
-     --ink 13.54->14.00:1, --ink-row-2 7.35->9.00:1, --ink-row-3 5.16->6.50:1,
-     --ink-2 3.65->5.50:1, --ink-3 2.44->4.00:1. Same hue/saturation per token, only
-     lightness raised, so the muted identity and the relative ordering
-     (ink > row-2 > row-3 > ink-2 > ink-3) both hold. See WORK_LOG.md. --ink-4 (the
-     original fourth step, for struck-through fix-list text) was dropped here — it had
-     never actually been wired to anything; that text uses --ink-3 (see .fix-row.is-checked
-     .fix-row-text), so the unreferenced custom property was dead weight, not a real token. */
-  --ink:       #d4d3c9; /* primary text */
-  --ink-2:     #808386; /* secondary text, labels — gutter labels only, never row content */
-  --ink-3:     #696c71; /* tertiary — placeholders, faint labels, struck-through fix text — gutter/chrome only, never row content */
+  --accent:      #ff3e1d; /* Electric Chili — brand, destructive/primary CTAs, roast heat */
+  --accent-dk:   #b3300f; /* darker chili — secondary emphasis, subordinate tags/borders */
+  --accent-lt:   #ff6a4d; /* lighter chili — hover state */
+  --accent-2:    #d4ff00; /* Toxic Lime — constructive/affirmative: saved, checked, success */
+  --accent-2-dk: #96b400; /* darker lime — secondary emphasis for accent-2 */
+  --accent-3:    #ffb020; /* Cyber Amber — caution / medium-severity */
 
-  /* Added for the /history row-content hierarchy — list rows are primary page content,
-     not gutter labels, so they need their own brighter mid-tones instead of --ink-2/-3. */
-  --ink-row-2: #abaaa4; /* history row secondary content — persona, severity chip text */
-  --ink-row-3: #8d8f92; /* history row tertiary content — source kind kicker, date */
+  --ink:   #fafafa; /* primary text — Text High-Contrast */
+  --ink-2: #a1a1aa; /* secondary text, labels — gutter labels only, never row content */
+  --ink-3: #71717a; /* tertiary — placeholders, faint labels, struck-through fix text */
 
-  --rule:      #2c2e31; /* 1px and 2px structural rules */
-  --rule-2:    #1c1e21; /* fix rows, hairlines, thin spacers */
+  /* /history + /chat row-content hierarchy — list rows are primary page content, not
+     gutter labels, so they read brighter than --ink-2/-3. */
+  --ink-row-2: #c7c7ce; /* row secondary content — persona, severity chip, kicker text */
+  --ink-row-3: #9d9da6; /* row tertiary content — source kind, dates */
 
-  --font-family: 'Courier New', monospace;
+  --rule:   #27272a; /* 1px/2px structural rules, card borders — Border Subtle */
+  --rule-2: #1b1b1e; /* hairlines, thin spacers */
+  --rule-3: #3f3f46; /* borders on floating interactive modules (panels/menus) */
 
-  /* #root's zoom scales its entire subtree's *rendered* size, not just its content — a
-     100dvh-based min-height declared anywhere inside it (see .app-root) resolves against
-     the real viewport but then renders at only this fraction of it (confirmed by direct
-     measurement: a plain min-height: 100dvh there rendered ~9% short of the real window,
-     not merely inside it). Kept as one shared value so the zoom itself and anything that
-     needs to compensate for it can never drift apart. */
-  --root-zoom: 0.9127;
+  --radius: 4px; /* tight neo-brutalist corner — cards, buttons, inputs */
+  --radius-pill: 8px; /* persona/severity/source tag chips only */
 
-  /* Same zoom-shrink problem as above, but for touch targets: a button declared
-     min-height: 44px/48px inside the zoomed #root actually measures ~40px/44px to a real
-     finger (confirmed via getBoundingClientRect() on an iframe at a true 380px viewport —
-     not just read off the CSS). Anything sized as a touch target uses these instead of a
-     literal px value so the real rendered size hits the real minimum. */
-  --touch-44: calc(44px / var(--root-zoom));
-  --touch-48: calc(48px / var(--root-zoom));
+  /* Hard, zero-blur offset shadow — the neo-brutalist "snap." Chili for the default/
+     destructive surface, lime for a constructive/affirmative one. Used sparingly, on the
+     handful of surfaces the design calls "high-impact": the selected persona/source
+     card, the primary submit, the completed-roast card. */
+  --shadow-hard:   4px 4px 0 0 var(--accent);
+  --shadow-hard-2: 4px 4px 0 0 var(--accent-2);
+  --shadow-hard-ink: 4px 4px 0 0 var(--ink);
+
+  --font-display: 'Space Grotesk', 'Courier New', sans-serif;
+  --font-body:    'Hanken Grotesk', 'Courier New', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Courier New', monospace;
+
+  /* Real 44/48px touch targets. The previous redesign divided these by a #root `zoom`
+     compensation factor (see the removed --root-zoom below) — this design doesn't apply
+     any zoom to #root, so there's nothing left to compensate for; these are the literal
+     rendered minimums again. */
+  --touch-44: 44px;
+  --touch-48: 48px;
+
+  /* "Roaster Studio — Clean Neu-Brutalist" — a second, light design system pulled from
+     the same Stitch project ("Roastify Frontend Redesign"), used by the header/footer
+     (global, every route) and by Home's own body content (src/routes/Roaster.jsx and
+     its two components) — see CLAUDE.md's "Routing and page structure" for why these
+     coexist with the dark tokens above rather than replacing them: Chat/History/Privacy
+     bodies haven't been redesigned to this system yet, so their own component CSS still
+     reads the dark tokens above unchanged. `--rs-*` never appears in a Chat/History/
+     Privacy body rule. */
+  --rs-canvas:      #faf8f5; /* page/section background — cream, not pure white */
+  --rs-card:        #ffffff;
+  --rs-subtle:      #f4f0ea; /* unselected cell fill */
+  --rs-ink:         #121212; /* text + hard borders */
+  --rs-muted:       #6b7280;
+  --rs-lime:        #e2f952; /* primary action / selected state */
+  --rs-lime-dk:     #c2db24;
+  --rs-lilac:       #e4d7ff; /* informational badges, secondary actions */
+  --rs-blue:        #c8e6ff; /* mild-severity accent */
+  --rs-coral:       #ff6b6b; /* danger / high-intensity */
+  --rs-coral-soft:  #ffe3e3;
+
+  --rs-border: 2.5px solid var(--rs-ink);
+  --rs-border-thick: 3px solid var(--rs-ink);
+  --rs-shadow-sm: 2px 2px 0 0 var(--rs-ink);
+  --rs-shadow: 4px 4px 0 0 var(--rs-ink);
+  --rs-shadow-lg: 6px 6px 0 0 var(--rs-ink);
+  --rs-shadow-xl: 8px 8px 0 0 var(--rs-ink);
 }
 
 html,
@@ -60,16 +91,14 @@ body {
 }
 #root {
   min-height: 100%;
-  /* A single honest value instead of the same `zoom` declaration on three nested
-     ancestors (html/body/#root), which compounds multiplicatively rather than applying
-     once — the previous three-element rule read as 97% but actually rendered at
-     0.97^3 ≈ 91.27%. Consolidated onto #root alone at that same effective value, so the
-     visual result is unchanged; see WORK_LOG.md for the measurement. */
-  zoom: var(--root-zoom);
+  /* The v2/v3 handoffs' `zoom: 97%` compensation hack (and its later single-element
+     consolidation, --root-zoom) doesn't carry over — this redesign's type scale and
+     spacing were sized directly against the real viewport, so there's nothing to shrink
+     and nothing to compensate for. No zoom is applied anywhere in this stylesheet. */
 }
 
 * {
-  font-family: var(--font-family);
+  font-family: var(--font-body);
   box-sizing: border-box;
 }
 
@@ -125,18 +154,23 @@ a:hover {
   0%, 49%  { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+/* Pulse variants — a plain opacity pulse for the header quota dot, and a coral ring
+   pulse for the "Nuclear" severity pill once selected (the "Destroy Me" pulsing-border
+   micro-animation, kept calm enough to sit inside prefers-reduced-motion's opt-out). */
+@keyframes r-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@keyframes r-pulse-coral {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 107, 107, 0); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .caret,
-  .idle-cursor {
-    animation: none;
-  }
-  .result-enter,
-  .error-enter,
-  .source-prompt {
-    animation: none;
-  }
-  .progress-bar {
+  .rs-caret,
+  .quota-badge-dot,
+  .rs-progress-bar,
+  .rs-severity-btn--destroy-me.is-selected {
     animation: none;
   }
 }
@@ -150,14 +184,9 @@ a:hover {
    leftover space, so the footer sits at the bottom of the screen with plain background
    above it — expected and fine. On a route taller than the viewport, main already
    exceeds its flex-basis on its own, so this has no effect and the page scrolls
-   normally with the footer right after content.
-   min-height is divided by --root-zoom, not a plain 100dvh: #root's zoom scales this
-   whole subtree's *rendered* size, so a plain 100dvh here still renders short of the
-   real window by that same fraction (measured directly — the footer sat ~9% of the
-   viewport above the real bottom edge). Dividing the *declared* height by the zoom
-   factor makes the *rendered* height reach exactly 100dvh, confirmed the same way. */
+   normally with the footer right after content. */
 .app-root {
-  min-height: calc(100dvh / var(--root-zoom));
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--ground);
@@ -166,107 +195,173 @@ a:hover {
 .app-main {
   flex: 1;
 }
-.input-form {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
 
 /* ===========================================================================
    1. Header — brand, nav, auth
    =========================================================================== */
+/* Header/footer are global — every route, not just Home — so this is the "Clean
+   Neu-Brutalist" system (--rs-* tokens) applied directly, not scoped behind a wrapper
+   class the way Home's own body content is (see the ".roaster-studio" section below).
+   Chat/History/Privacy bodies keep the dark system for now; only the chrome around them
+   changes here, ahead of those pages getting their own redesign pass later. */
 .header {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
-  align-items: stretch;
-  border-bottom: 2px solid var(--rule);
+  align-items: center;
+  gap: 16px;
+  padding: 0 28px;
+  min-height: 76px;
+  background: var(--rs-card);
+  border-bottom: var(--rs-border-thick);
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px 28px;
-  border-right: 1px solid var(--rule);
+  gap: 12px;
 }
 .brand-mark {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--rs-lime);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-size: 18px;
+  transition: transform 0.18s;
+}
+.brand-mark::before {
+  content: "\1F525"; /* 🔥 — the mockup's literal logo mark */
+}
+.brand:hover .brand-mark {
+  transform: rotate(6deg);
 }
 .brand-name {
-  font-size: 14px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.34em;
-  color: var(--accent);
+  letter-spacing: -0.01em;
+  color: var(--rs-ink);
 }
 
 .nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 8px;
 }
 .nav-item {
-  position: relative;
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
-  color: var(--ink-2);
+  padding: 7px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   cursor: pointer;
-  transition: color 0.18s, background-color 0.18s;
+  transition: background-color 0.18s;
 }
-.nav-item-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
+.nav-item:hover {
+  background: var(--rs-subtle);
 }
 .nav-item.is-active {
-  background: var(--ground-3);
-  color: var(--accent);
+  background: var(--rs-lime);
 }
-.nav-item.is-active .nav-item-bar {
-  background: var(--accent);
+.nav-item.is-active:hover {
+  background: var(--rs-lime);
 }
 
 .hspacer {
   flex: 1;
-  border-left: 1px solid var(--rule-2);
+}
+
+/* Hamburger — mobile only (the 600px block below turns it on). */
+.menu-toggle {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: var(--touch-44);
+  height: var(--touch-44);
+  padding: 0;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  cursor: pointer;
+}
+.menu-toggle.is-open {
+  background: var(--rs-lime);
+}
+.menu-toggle-bar {
+  display: block;
+  width: 20px;
+  height: 3px;
+  background: var(--rs-ink);
+}
+
+.quota-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--rs-coral-soft);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--rs-ink);
+  white-space: nowrap;
+}
+.quota-badge-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rs-coral);
+  animation: r-pulse-dot 1.6s ease-in-out infinite;
+}
+.quota-badge.is-unlimited .quota-badge-dot {
+  background: var(--rs-lime-dk);
+  animation: none;
 }
 
 .auth {
+  position: relative;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 10px;
 }
 .auth-trigger {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 22px;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
-  color: var(--ink);
+  gap: 9px;
+  padding: 9px 16px;
+  background: var(--rs-lilac);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.18s, background-color 0.18s;
+  transition: background-color 0.18s;
 }
+.auth-trigger:hover,
 .auth-trigger.is-open {
-  background: var(--accent);
-  color: #000;
+  background: #d3c2ff;
 }
 .auth-caret {
   font-size: 11px;
@@ -278,62 +373,66 @@ a:hover {
 .auth-user {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 22px;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
   cursor: pointer;
-  transition: color 0.18s, background-color 0.18s;
+  transition: background-color 0.18s;
 }
-.auth-user.is-open .auth-handle {
-  color: var(--accent);
+.auth-user:hover,
+.auth-user.is-open {
+  background: var(--rs-subtle);
 }
 .auth-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: var(--accent);
-  color: #000;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--rs-lime);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
+  border: 1.5px solid var(--rs-ink);
 }
 .auth-handle {
+  font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.1em;
-  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--rs-ink);
 }
 .auth-signout {
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
-  color: var(--ink-2);
+  padding: 9px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   cursor: pointer;
-  transition: color 0.18s;
+  transition: background-color 0.18s;
 }
 .auth-signout:hover {
-  color: var(--accent);
+  background: var(--rs-coral-soft);
 }
 
 .signin-panel,
 .account-panel {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 10px);
   right: 0;
   z-index: 20;
   width: 340px;
-  background: var(--ground);
-  border: 2px solid var(--accent);
-  border-top: 0;
+  background: var(--rs-card);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-lg);
   animation: r-fade 0.18s ease-out both;
 }
 .signin-panel-head {
@@ -341,39 +440,41 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--rule-2);
+  padding: 14px 18px;
+  border-bottom: var(--rs-border);
 }
 .signin-panel-title {
+  font-family: var(--font-mono);
   font-size: 11px;
   white-space: nowrap;
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: var(--accent);
+  color: var(--rs-ink);
 }
 .signin-panel-close {
   background: transparent;
   border: 0;
   padding: 4px 0;
+  font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: var(--ink-3);
+  color: var(--rs-muted);
   cursor: pointer;
   transition: color 0.18s;
 }
 .signin-panel-close:hover {
-  color: var(--ink);
+  color: var(--rs-ink);
 }
 .signin-panel-copy {
   margin: 0;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--rule-2);
+  padding: 16px 18px;
+  border-bottom: var(--rs-border);
   font-size: 13px;
   line-height: 22px;
-  color: var(--ink-2);
+  color: var(--rs-muted);
   text-wrap: pretty;
 }
 .signin-provider {
@@ -381,36 +482,37 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   min-height: 52px;
-  background: transparent;
+  background: var(--rs-card);
   border: 0;
-  border-bottom: 1px solid var(--rule-2);
-  color: var(--ink);
+  border-bottom: var(--rs-border);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   text-align: left;
   cursor: pointer;
-  transition: color 0.18s, background-color 0.18s;
+  transition: background-color 0.18s;
 }
 .signin-provider:last-child {
   border-bottom: 0;
 }
 .signin-provider:hover {
-  color: var(--accent);
-  background: var(--ground-2);
+  background: var(--rs-lime);
 }
 .signin-provider-mark {
   display: inline-block;
   width: 9px;
   height: 9px;
-  background: var(--ink-2);
+  background: var(--rs-ink);
+  border-radius: 2px;
 }
 .signin-provider-mark--google {
   background: transparent;
-  border: 1px solid var(--ink-2);
+  border: 1px solid var(--rs-ink);
 }
 .signin-provider-arrow {
   margin-left: auto;
@@ -420,21 +522,24 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--rule-2);
+  padding: 16px 18px;
+  border-bottom: var(--rs-border);
 }
 .account-panel-avatar {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
   object-fit: cover;
+  border-radius: 50%;
+  border: 1.5px solid var(--rs-ink);
 }
 .account-panel-avatar--fallback {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
-  color: #000;
+  background: var(--rs-lime);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 700;
 }
@@ -447,24 +552,25 @@ a:hover {
 .account-panel-name {
   font-size: 13px;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--rs-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .account-panel-email {
   font-size: 12px;
-  color: var(--ink-2);
+  color: var(--rs-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .account-panel-provider {
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: var(--ink-3);
+  color: var(--rs-muted);
 }
 /* Deliberately the quietest thing in the panel at rest — this is a panel people open for
    ordinary reasons (checking which email/provider they're signed in with), not to delete
@@ -473,19 +579,20 @@ a:hover {
    treatment as every other destructive confirm in this app (.hist-row-confirm-yes etc.)
    — the subordination is about the resting state, not about hiding the real warning. */
 .account-panel-danger {
-  padding: 14px 20px 18px;
+  padding: 14px 18px 16px;
 }
 .account-panel-delete-trigger {
   background: transparent;
   border: 0;
   padding: 0;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--rs-muted);
   cursor: pointer;
   transition: color 0.18s;
 }
 .account-panel-delete-trigger:hover {
-  color: var(--ink-2);
+  color: var(--rs-coral);
 }
 
 /* Fallback shown only when Supabase isn't configured at all (no VITE_SUPABASE_* env
@@ -494,77 +601,34 @@ a:hover {
 .hmeta {
   display: flex;
   align-items: center;
+  font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  color: var(--ink-2);
+  color: var(--rs-muted);
 }
 .hmeta-item {
-  padding: 18px 28px;
-  border-left: 1px solid var(--rule);
-}
-
-/* ===========================================================================
-   2. Hero — full-width, no side column (the "what it reads" panel is gone; it
-   duplicated the source cards one section below)
-   =========================================================================== */
-.hero {
-  border-bottom: 2px solid var(--rule);
-}
-.hero-main {
-  padding: 64px 28px 56px;
-}
-.hero-title {
-  margin: 0;
-  font-size: 104px;
-  line-height: 0.82;
-  font-weight: 900;
-  letter-spacing: -0.09em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-.hero-rule {
-  height: 2px;
-  width: 180px;
-  background: var(--accent);
-  margin: 34px 0 26px;
-}
-.hero-copy {
-  margin: 0;
-  max-width: 52ch;
-  font-size: 17px;
-  line-height: 31px;
-  color: var(--ink);
-  text-wrap: pretty;
-}
-
-/* History / roaster hero title variant — smaller display size for a route whose
-   content isn't the primary hook. */
-.hero-title--small {
-  font-size: 72px;
-  line-height: 0.84;
-  letter-spacing: -0.07em;
-}
-.hero-rule--small {
-  width: 140px;
-  margin: 28px 0 22px;
+  padding: 8px 14px;
+  border: var(--rs-border);
+  background: var(--rs-card);
 }
 
 /* ===========================================================================
    Shared gutter-grid row — the backbone of the design. Every form and output
-   section uses it.
+   section uses it; the mono uppercase gutter label is this design system's
+   equivalent of the Stitch mockup's numbered ".01 // SECTION" card headers.
    =========================================================================== */
 .row {
   display: grid;
   grid-template-columns: 120px 1fr;
   border-bottom: 2px solid var(--rule);
+  background: var(--ground);
 }
-.row--thin {
-  border-bottom: 1px solid var(--rule);
-}
+
 .row-label {
   padding: 22px 20px;
   border-right: 1px solid var(--rule);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -575,583 +639,22 @@ a:hover {
   color: var(--accent);
 }
 
-/* ===========================================================================
-   3. Source row + persona grid — one cell shape, shared between them
-   =========================================================================== */
-.source-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-}
-.persona-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-}
-.source-card,
-.persona-cell {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 104px;
-  padding: 20px 22px;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.18s, color 0.18s;
-}
-.source-card:disabled,
-.persona-cell:disabled {
-  cursor: not-allowed;
-}
-.source-card.is-selected,
-.persona-cell.is-selected {
-  background: var(--ground-3);
-  color: var(--accent);
-}
-.source-card.is-locked,
-.source-card.is-disabled {
-  color: var(--ink-3);
-}
-.source-card.is-disabled {
-  text-decoration: line-through;
-  text-decoration-color: var(--rule);
-}
-.source-card-bar,
-.persona-cell-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
-}
-.source-card.is-selected .source-card-bar,
-.persona-cell.is-selected .persona-cell-bar {
-  background: var(--accent);
-}
-.source-card-name,
-.persona-cell-name {
-  font-size: 15px;
-  line-height: 22px;
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-}
-.source-card-tag {
-  font-size: 11px;
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  padding: 4px 8px;
-  border: 1px solid var(--rule);
-  color: var(--ink-3);
-}
-.source-card.is-selected .source-card-tag {
-  border-color: var(--accent-dk);
-  color: var(--accent-dk);
-}
-.source-card.is-locked .source-card-tag {
-  border-color: var(--accent-dk);
-  color: var(--accent);
-}
-.persona-cell-note {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--ink-3);
-}
-.persona-cell.is-selected .persona-cell-note {
-  color: var(--accent-dk);
-}
+/* Shared dark-system states, still used by Chat/History/Privacy/ChatLockedPanel (see
+   CLAUDE.md) — Home no longer uses any of these (see .rs-idle/.rs-error/.rs-invitation
+   under the "2b. Home" section below, which are Home's own cream-styled equivalents). */
 
-/* Inline sign-in / disabled prompt beneath the source grid — the "invitation" marker
-   (outlined amber square, bullet) for a locked source, vs. a plain dash marker for a
-   kill-switch-disabled one. See CLAUDE.md's "Auth & persistence" section: a signed-out
-   user hitting a tier boundary must never read as a failure. */
-.source-prompt {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  flex-wrap: wrap;
-  padding: 22px 28px;
-  border-top: 1px solid var(--rule-2);
-  background: var(--ground-2);
-  border-left: 2px solid var(--rule);
-  animation: r-fade 0.25s ease-out both;
-}
-.source-prompt.is-invitation {
-  border-left-color: var(--accent);
-}
-.source-prompt-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  flex: 1;
-  min-width: 240px;
-}
-.source-prompt-mark {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  line-height: 1;
-  border: 1px solid var(--rule);
-  color: var(--ink-2);
-}
-.source-prompt.is-invitation .source-prompt-mark {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.source-prompt-text {
-  max-width: 56ch;
-  font-size: 15px;
-  line-height: 26px;
-  color: var(--ink);
-  text-wrap: pretty;
-}
-.source-prompt-actions {
-  display: flex;
-  gap: 0;
-  flex-shrink: 0;
-}
-.source-prompt-provider {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 13px 20px;
-  background: transparent;
-  border: 1px solid var(--rule);
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: color 0.18s, border-color 0.18s;
-}
-.source-prompt-provider + .source-prompt-provider {
-  border-left: 0;
-}
-.source-prompt-provider:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.source-prompt-close {
-  flex-shrink: 0;
-  background: transparent;
-  border: 0;
-  padding: 13px 0 13px 16px;
-  color: var(--ink-3);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: color 0.18s;
-}
-.source-prompt-close:hover {
-  color: var(--ink);
-}
-
-/* ===========================================================================
-   4. Input row — URL variant
-   =========================================================================== */
-.link-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 28px;
-}
-.link-chevron {
-  color: var(--accent);
-  font-size: 20px;
-}
-.link-input {
-  flex: 1;
-  min-width: 0;
-  padding: 26px 0;
-  font-size: 20px;
-  letter-spacing: -0.01em;
-  background: transparent;
-  border: 0;
-  color: var(--ink);
-  outline: none;
-}
-
-/* 4b. Input row — upload variant */
-.hidden {
-  display: none;
-}
-.file-body {
-  padding: 24px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.file-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--ink-2);
-}
-.file-hint-chevron {
-  color: var(--accent);
-}
-.drop {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 26px 24px;
-  cursor: pointer;
-  border: 1px dashed var(--rule);
-  background: transparent;
-  transition: background-color 0.18s, border-color 0.18s;
-}
-.drop.is-dragging {
-  border-color: var(--accent);
-  background: var(--ground-3);
-}
-.drop-arrow {
-  font-size: 24px;
-  line-height: 1;
-  color: var(--accent);
-}
-.drop-label {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink);
-}
-.drop-browse {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-3);
-}
-.file-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 22px;
-  border: 1px solid var(--rule);
-  background: var(--ground-2);
-}
-.file-check {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  background: var(--accent);
-  color: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  line-height: 1;
-}
-.file-name {
-  font-size: 15px;
-  color: var(--ink);
-}
-.file-replace {
-  margin-left: auto;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--rule);
-  padding: 10px 0 10px 22px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: color 0.2s;
-}
-.file-replace:hover {
-  color: var(--accent);
-}
-.paste-divider {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.paste-divider-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.paste-divider-rule {
-  flex: 1;
-  height: 1px;
-  background: var(--rule-2);
-}
-.paste-area {
-  width: 100%;
-  min-height: 104px;
-  resize: vertical;
-  padding: 16px;
-  background: transparent;
-  border: 1px solid var(--rule);
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 26px;
-  outline: none;
-}
-.upload-error {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--accent);
-}
-
-/* ===========================================================================
-   5. Severity row — its own gutter row now, not a column beside persona
-   =========================================================================== */
-.severity-row {
-  display: flex;
-  align-items: stretch;
-}
-.severity-cell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: 64px;
-  padding: 16px 24px;
-  border: 0;
-  border-left: 1px solid var(--rule-2);
-  white-space: nowrap;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: color 0.18s, background-color 0.18s;
-}
-.severity-cell:first-child {
-  border-left: 0;
-}
-.severity-cell.is-selected {
-  background: var(--ground-3);
-  color: var(--accent);
-}
-
-/* Dev-only model row — reuses the source-card visual language rather than
-   introducing a new pattern; not part of the design spec (no model name ever
-   appears in production), only rendered when import.meta.env.DEV. */
-.model-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-/* ===========================================================================
-   6. Submit, progress, rate limit
-   =========================================================================== */
-.submit-section {
-  border-bottom: 2px solid var(--rule);
-}
-.submit {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 26px 28px;
-  border: 0;
-  font-size: 15px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  text-align: left;
-  transition: background-color 0.18s;
-  background: var(--accent);
-  color: #000;
-  cursor: pointer;
-}
-.submit:disabled {
-  background: var(--ground-3);
-  color: var(--ink-3);
-  cursor: not-allowed;
-}
-.submit-arrow {
-  margin-left: auto;
-  opacity: 1;
-}
-.submit.is-streaming .submit-arrow {
-  opacity: 0.4;
-}
-.progress-track {
-  height: 2px;
-  background: var(--rule);
-  overflow: hidden;
-}
-.progress-bar {
-  height: 2px;
-  width: 40%;
-  background: var(--accent);
-  animation: r-load 1.1s linear infinite;
-}
-.rate {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 14px 28px;
-  border-top: 1px solid var(--rule);
-}
-.rate-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
-}
-.rate-label-value {
-  color: var(--ink);
-}
-.rate-upgrade {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--accent-dk);
-  cursor: pointer;
-  transition: color 0.18s;
-}
-.rate-upgrade:hover {
-  color: var(--accent);
-}
-.rate-saved {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
-/* ===========================================================================
-   7. Output — idle / streaming / error / invitation / result
-   =========================================================================== */
-.idle-body {
-  padding: 56px 28px;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.idle-label {
-  font-size: 15px;
-  text-transform: uppercase;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: var(--ink-3);
-}
-.idle-cursor {
-  display: inline-block;
-  width: 9px;
-  height: 16px;
-  background: var(--accent);
-  animation: r-blink 1s step-end infinite;
-}
-
-.out-body {
-  padding: 40px 28px 44px;
-  background: var(--ground-2);
-}
-.stream-line {
-  margin-bottom: 24px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink);
-}
-.roast-body,
-.stream-text {
-  margin: 0;
-  max-width: 60ch;
-  font-size: 26px;
-  line-height: 42px;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-  text-wrap: pretty;
-}
-.caret {
-  display: inline-block;
-  width: 13px;
-  height: 24px;
-  margin-left: 4px;
-  vertical-align: -3px;
-  background: var(--accent);
-  animation: r-blink 1s step-end infinite;
-}
-
-.error-body {
-  padding: 36px 28px 32px;
-  background: var(--ground-2);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 16px;
-}
-.error-top {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.error-icon {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  background: var(--accent);
-  color: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-}
-.error-msg {
-  font-size: 20px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-.error-detail {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
-}
 .retry {
   margin-top: 6px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 15px 24px;
+  padding: 14px 22px;
   min-height: var(--touch-48);
   background: transparent;
   border: 1px solid var(--rule);
+  border-radius: var(--radius);
   color: var(--ink-2);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -1163,19 +666,6 @@ a:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
-
-/* Invitation output state — a signed-out user hitting a tier boundary server-side
-   (SIGN_IN_REQUIRED) mid-flow. Deliberately not styled or labelled as an error: outlined
-   marker + bullet instead of the filled "!" square, direct provider buttons instead of a
-   retry. In normal use the locked source cell prevents this from ever being reached. */
-.invitation-body {
-  padding: 36px 28px 32px;
-  background: var(--ground-2);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 16px;
-}
 .invitation-top {
   display: flex;
   align-items: center;
@@ -1185,8 +675,8 @@ a:hover {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  border: 1px solid var(--accent-2);
+  color: var(--accent-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1194,290 +684,1624 @@ a:hover {
   line-height: 1;
 }
 .invitation-msg {
-  font-size: 20px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
-.invitation-actions {
-  display: flex;
-  gap: 0;
-  margin-top: 4px;
-}
 
-/* Entry point 1 into chat: the CTA on a just-finished roast (RoastCard.jsx's complete
-   state). Deliberately not another .action-btn in the row below — those are plain-text,
-   secondary actions (share/save/roast another); this is the one the whole roast was
-   building toward, so it gets its own outlined-amber treatment, permanently on rather
-   than only on :hover like .retry/.source-prompt-provider. The signed-out variant reuses
-   .invitation-body/.source-prompt-provider verbatim instead (same row, no new CSS) — see
-   RoastCard.jsx. */
-.start-chat-body {
-  padding: 28px 28px 32px;
-  background: var(--ground-2);
+/* ===========================================================================
+   2b. Home — "Roaster Studio — Clean Neu-Brutalist" (Stitch project "Roastify
+   Frontend Redesign"). Everything below is scoped under .roaster-studio (the root
+   element of src/routes/Roaster.jsx) and uses only the --rs-* tokens, so none of it
+   touches the dark system Chat/History/Privacy still use — see the tokens comment
+   at the top of this file. Audit Diagnostics and Key Indictments are hardcoded
+   per the mockup (no backend field for either yet — see CLAUDE.md/ROASTIFY_TASKS.md);
+   everything else is real, live data.
+   =========================================================================== */
+/* min-height: 100% stretches this to fill .app-main's real flex:1 height whenever this
+   page's own content is shorter than the viewport (e.g. the chat sign-in gate) — without
+   it, the cream background stops at the content's height and the dark .app-root
+   background shows through in the gap above the footer, which reads as a bug now that
+   the app has two themes (it didn't matter back when the whole app was one dark theme). */
+.roaster-studio {
+  /* 100dvh (not a percentage of .app-main) deliberately — .app-main is a block-level
+     flex item, and its used height doesn't reliably resolve as a percentage-resolution
+     base for a block child in this app's own layout shell (measured directly: an
+     explicit 645px .app-main still left a 100%-min-height child at 354px). 100dvh
+     over-shoots by the header+footer's own height, which just means a route this short
+     scrolls a few dozen extra pixels — a normal, harmless outcome — rather than leaving
+     the dark .app-root background exposed in a gap above the footer. */
+  min-height: 100dvh;
+  background: var(--rs-canvas);
+  color: var(--rs-ink);
+  font-family: var(--font-body);
 }
-.start-chat-cta {
-  display: flex;
+.rs-hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 28px 0;
+}
+.rs-hero-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
-  padding: 15px 24px;
-  min-height: var(--touch-48);
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: background-color 0.18s, color 0.18s;
-}
-.start-chat-cta:hover:not(:disabled) {
-  background: var(--accent);
-  color: #000;
-}
-.start-chat-cta:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-.start-chat-error {
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: var(--accent);
-}
-
-.result-enter {
-  animation: r-fade 0.4s ease-out both;
-}
-.error-enter {
-  animation: r-fade 0.3s ease-out both;
-}
-
-.meta-row {
-  background: var(--ground-2);
-}
-.meta-line {
-  padding: 16px 28px;
+  gap: 8px;
+  padding: 5px 12px;
+  margin-bottom: 14px;
+  background: var(--rs-lilac);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
+  letter-spacing: 0.14em;
+}
+.rs-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 48px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-hero-copy {
+  margin: 10px 0 0;
+  max-width: 62ch;
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 500;
+  color: rgba(18, 18, 18, 0.75);
 }
 
-.fixes-label-count {
-  color: var(--accent);
+.rs-grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 28px 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 28px;
+  align-items: start;
 }
-.fix-row {
+/* Single-column page body — ChatList.jsx's conversation list has no second column,
+   unlike Home's studio grid, so it reuses this instead of .rs-grid with an override. */
+.rs-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 28px 56px;
+}
+.rs-convo-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.rs-col-controls {
   display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 20px 28px;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.rs-col-verdict {
+  position: sticky;
+  top: 96px;
+  min-width: 0;
+}
+
+.rs-card {
+  background: var(--rs-card);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-lg);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.rs-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.rs-field-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--rs-ink);
+}
+.rs-field-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+.rs-field-hint--intensity {
+  color: var(--rs-ink);
+}
+.rs-field-hint--nuclear {
+  color: var(--rs-coral);
+}
+.rs-demo-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--rs-ink);
+  text-decoration: underline;
   cursor: pointer;
-  border-bottom: 1px solid var(--rule-2);
+}
+.rs-demo-btn:hover {
+  color: var(--rs-coral);
+}
+
+/* Platform picker — Stitch's 2/4-up grid box treatment: each cell is its own
+   bordered card with a hard shadow, selected = lime fill. */
+.rs-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.rs-platform-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px 8px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.15s, transform 0.1s;
+}
+.rs-platform-btn:hover:not(:disabled):not(.is-selected) {
+  background: var(--rs-card);
+}
+.rs-platform-btn.is-selected {
+  background: var(--rs-lime);
+}
+.rs-platform-btn:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+.rs-platform-btn:disabled {
+  cursor: not-allowed;
+}
+.rs-platform-btn.is-locked,
+.rs-platform-btn.is-disabled {
+  color: var(--rs-muted);
+}
+.rs-platform-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rs-platform-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--rs-muted);
+}
+
+/* Persona picker — vertical stack, selected = lilac fill + filled radio dot. */
+.rs-persona-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rs-persona-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  cursor: pointer;
+  text-align: left;
   transition: background-color 0.15s;
 }
-.fix-row.is-checked {
-  background: var(--ground-4);
+.rs-persona-card:hover:not(:disabled):not(.is-selected) {
+  background: var(--rs-subtle);
 }
-.fix-row-checkbox {
-  position: relative;
+.rs-persona-card.is-selected {
+  background: var(--rs-lilac);
+}
+/* ChatThread.jsx's persona panel — display only, no ability to switch mid-conversation,
+   so this shouldn't look clickable the way Home's own persona picker does. */
+.rs-persona-card.is-static {
+  cursor: default;
+}
+.rs-persona-card:disabled {
+  cursor: not-allowed;
+}
+.rs-persona-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.rs-persona-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--rs-ink);
+  color: var(--rs-lime);
+  font-size: 15px;
+  border: var(--rs-border);
+}
+.rs-persona-body {
+  min-width: 0;
+}
+.rs-persona-name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-persona-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 500;
+  color: var(--rs-muted);
+}
+.rs-persona-radio {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  margin-top: 5px;
-  border: 1px solid var(--ink-3);
+  border-radius: 50%;
+  border: 1.5px solid var(--rs-ink);
+  background: var(--rs-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rs-persona-card.is-selected .rs-persona-radio {
+  background: var(--rs-ink);
+}
+.rs-persona-radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rs-lime);
+}
+
+/* Inline sign-in / disabled prompt beneath the platform grid — Home's own version of
+   the "invitation" pattern (see CLAUDE.md's "Auth & persistence"): a locked source must
+   never read as a failure. Not shared with .invitation-* below (those stay dark, used
+   by Chat/History). */
+.rs-source-prompt {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+}
+.rs-source-prompt-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--rs-ink);
+}
+.rs-source-prompt-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.rs-source-prompt-btn {
+  padding: 8px 14px;
+  background: var(--rs-lilac);
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-source-prompt-btn:hover {
+  background: #d3c2ff;
+}
+.rs-source-prompt-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+  cursor: pointer;
+}
+.rs-source-prompt-close:hover {
+  color: var(--rs-ink);
+}
+
+.rs-input {
+  width: 100%;
+  padding: 13px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  color: var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  outline: none;
+}
+.rs-input::placeholder {
+  color: var(--rs-muted);
+  font-weight: 400;
+}
+.rs-input:focus {
+  box-shadow: var(--rs-shadow);
+}
+.hidden {
+  display: none;
+}
+
+/* Upload variant (linkedin/resume) — no equivalent in the Stitch mockup (it only shows
+   the URL-input state); designed to match its visual language, flagged for review. */
+.rs-upload-hint {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--rs-muted);
+  margin-bottom: 10px;
+}
+.rs-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+  cursor: pointer;
+  border: 2.5px dashed var(--rs-ink);
+  background: var(--rs-subtle);
+  transition: background-color 0.15s;
+}
+.rs-dropzone.is-dragging {
+  background: var(--rs-lime);
+}
+.rs-dropzone-arrow {
+  font-size: 18px;
+  color: var(--rs-ink);
+}
+.rs-dropzone-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-dropzone-browse {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+.rs-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: var(--rs-border);
+  background: var(--rs-lime);
+}
+.rs-file-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  background: var(--rs-ink);
+  color: var(--rs-lime);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  line-height: 1;
-  color: #000;
-  transition: background-color 0.15s, border-color 0.15s;
 }
-/* Visually hidden but still a real, focusable, clickable checkbox — sits over the
-   styled box above via .fix-row-checkbox's position: relative, for free keyboard and
-   screen-reader support. */
-.fix-row-checkbox-input {
-  position: absolute;
-  inset: 0;
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-  opacity: 0;
-}
-/* opacity: 0 above suppresses this input's own outline along with everything else about
-   it (opacity applies to the whole box, not just its content) — a keyboard user tabbing
-   here got no focus indicator at all, not even the browser default. Painted onto the
-   visible styled box instead, driven by the real input's :focus-visible state. */
-.fix-row-checkbox:has(.fix-row-checkbox-input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.fix-row.is-checked .fix-row-checkbox {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.fix-row-text {
-  font-size: 16px;
-  line-height: 28px;
-  max-width: 64ch;
-  color: var(--ink);
-  transition: color 0.15s;
-}
-.fix-row.is-checked .fix-row-text {
-  color: var(--ink-3);
-  text-decoration: line-through;
-}
-
-.actions-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-}
-.action-btn {
-  display: flex;
-  align-items: center;
-  padding: 22px 28px;
-  background: transparent;
-  border: 0;
+.rs-file-name {
   font-size: 13px;
   font-weight: 700;
+  color: var(--rs-ink);
+}
+.rs-file-replace {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
+  text-decoration: underline;
+  color: var(--rs-ink);
   cursor: pointer;
-  transition: color 0.2s, background-color 0.2s;
 }
-.action-btn + .action-btn {
-  border-left: 1px solid var(--rule-2);
+.rs-paste-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
 }
-.action-btn:hover {
-  color: var(--accent);
-  background: var(--ground-5);
+.rs-paste-divider-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+  white-space: nowrap;
 }
-.action-btn--share.is-copied {
-  color: var(--accent);
+.rs-paste-divider-rule {
+  flex: 1;
+  height: 1.5px;
+  background: var(--rs-ink);
+  opacity: 0.15;
+}
+.rs-paste-area {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  padding: 12px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  color: var(--rs-ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 21px;
+  outline: none;
+}
+.rs-paste-area:focus {
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-upload-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--rs-coral);
+}
+.rs-upload-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rs-muted);
+}
+
+/* Severity — Mild (blue outline), Medium (lime fill), Destroy Me (coral fill, subtle
+   pulse). Values stay mild/medium/"destroy me"; the labels are the original ones, only
+   the per-tier color is new. */
+.rs-severity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.rs-severity-btn {
+  padding: 10px 6px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.rs-severity-btn:hover:not(:disabled):not(.is-selected) {
+  background: var(--rs-card);
+}
+.rs-severity-btn--mild.is-selected {
+  background: var(--rs-blue);
+}
+.rs-severity-btn--medium.is-selected {
+  background: var(--rs-lime);
+}
+.rs-severity-btn--destroy-me.is-selected {
+  background: var(--rs-coral);
+  color: #fff;
+  animation: r-pulse-coral 1.8s ease-in-out infinite;
+}
+
+/* Dev-only model row — reuses the platform-picker visual language; not part of the
+   design spec (no model name ever appears in production), only rendered in dev. */
+.rs-model-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rs-submit {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 24px;
+  background: var(--rs-lime);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-lg);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--rs-ink);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.rs-submit:hover:not(:disabled) {
+  background: var(--rs-lime-dk);
+}
+.rs-submit:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.rs-submit:disabled {
+  background: var(--rs-subtle);
+  color: var(--rs-muted);
+  cursor: not-allowed;
+}
+.rs-submit.is-streaming {
+  gap: 12px;
+}
+.rs-progress-track {
+  height: 3px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  border-top: 0;
+  overflow: hidden;
+}
+.rs-progress-bar {
+  height: 100%;
+  width: 40%;
+  background: var(--rs-coral);
+  animation: r-load 1.1s linear infinite;
 }
 
 /* ===========================================================================
-   8. History page
+   Verdict card — the right column's output card. Idle / streaming / error /
+   rate-limited / sign-in-invitation / complete, exactly one at a time, matching
+   RoastCard.jsx's own state machine.
    =========================================================================== */
-.history-list-label {
-  color: var(--accent);
+.rs-verdict {
+  background: var(--rs-card);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-xl);
+  overflow: hidden;
 }
-/* Row type hierarchy — the row is the page's primary content, so it reads brighter
-   than the gutter labels around it. Three explicit levels (source handle = primary,
-   persona/severity = secondary, source kind/date = tertiary) using the --ink-row-*
-   tokens above; nothing in a row uses --ink-2/--ink-3, which stay gutter-label-only. */
-/* .hist-row is now just the positioning context for .hist-row-delete (absolutely placed,
-   outside the grid entirely) plus the shared border between rows — the actual grid lives
-   on .hist-row-open below, a real <button> so the row is a genuine click target (opens
-   chat — see History.jsx) rather than a div with no affordance or keyboard reachability. */
-.hist-row {
-  position: relative;
-  border-bottom: 1px solid var(--rule-2);
-}
-.hist-row-open {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 0.8fr 0.6fr;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
-  /* Extra right padding clears .hist-row-delete's own footprint at top-right — kept in the
-     row's own padding box (not a 5th grid column) so it doesn't disturb the source/persona/
-     severity/date layout that's already been checked for overflow across breakpoints. */
-  padding: 20px 64px 20px 28px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 0.18s;
-}
-.hist-row-open:hover,
-.hist-row-open:focus-visible {
-  background: var(--ground-2);
-}
-.hist-row-open:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-.hist-row-source {
+.rs-verdict-head {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-width: 0; /* lets the handle actually truncate with ellipsis inside a grid column */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--rs-ink);
+  color: #fff;
+  border-bottom: var(--rs-border-thick);
 }
-.hist-row-kind {
-  font-size: 12px;
+.rs-verdict-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-row-3);
+  letter-spacing: 0.14em;
+  color: var(--rs-lime);
 }
-.hist-row-handle {
-  font-size: 17px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
+.rs-verdict-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rs-coral);
+  border: 1px solid #fff;
+}
+.rs-verdict-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-verdict-target-label {
+  color: var(--rs-muted);
+  text-transform: uppercase;
+}
+.rs-verdict-target-value {
+  padding: 2px 8px;
+  background: var(--rs-card);
+  color: var(--rs-ink);
+  border: 1.5px solid var(--rs-ink);
+  font-size: 10px;
+  max-width: 40ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hist-row-persona {
-  font-size: 15px;
-  color: var(--ink-row-2);
-  white-space: nowrap;
+.rs-verdict-body {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
-.hist-row-severity {
-  justify-self: start;
-  padding: 5px 9px;
-  border: 1px solid var(--rule);
-  font-size: 11px;
-  font-weight: 700;
+
+/* Idle */
+.rs-idle {
+  padding: 56px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.rs-idle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rs-ink);
+  font-size: 20px;
+}
+.rs-idle-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--ink-row-2);
-  white-space: nowrap;
 }
-.hist-row-date {
+.rs-idle-copy {
+  margin: 0;
+  max-width: 40ch;
   font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-row-3);
-  white-space: nowrap;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--rs-muted);
 }
-.hist-row-delete {
-  position: absolute;
-  top: 20px;
-  right: 28px;
-  min-height: var(--touch-44);
-  padding: 0 4px;
-  background: transparent;
-  border: 0;
-  color: var(--ink-3);
+
+/* Streaming */
+.rs-stream-label {
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  color: var(--rs-coral);
+}
+.rs-stream-text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-caret {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  margin-left: 3px;
+  vertical-align: -3px;
+  background: var(--rs-ink);
+  animation: r-blink 1s step-end infinite;
+}
+
+/* Error / rate-limited */
+.rs-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 4px 0;
+}
+.rs-error-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rs-error-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rs-coral);
+  color: #fff;
+  font-weight: 700;
+  border: 1.5px solid var(--rs-ink);
+}
+.rs-error-msg {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.rs-error-detail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--rs-muted);
+}
+.rs-retry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: color 0.18s;
 }
-.hist-row-delete:hover {
-  color: var(--accent);
+.rs-retry:hover {
+  background: var(--rs-subtle);
 }
-/* Replaces the row entirely while its delete is pending confirmation — not a modal, since
-   the row itself already identifies which roast, and this keeps the list from jumping. */
-.hist-row-confirm {
+
+/* Sign-in invitation — a tier boundary, never styled as an error (see CLAUDE.md's
+   "Auth & persistence"). Also reused for the signed-out "Start Rebuttal Chat" gate. */
+.rs-invitation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 4px 0;
+}
+.rs-invitation-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rs-invitation-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--rs-ink);
+  background: var(--rs-lilac);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.rs-invitation-msg {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+.rs-invitation-actions {
+  display: flex;
+  gap: 8px;
+}
+.rs-invitation-btn {
+  padding: 10px 16px;
+  background: var(--rs-lilac);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-invitation-btn:hover {
+  background: #d3c2ff;
+}
+
+/* Complete — quote callout, hardcoded Audit Diagnostics + Key Indictments (see the
+   section comment above), real Fixes checklist, action strip. */
+.rs-quote-card {
+  position: relative;
+  padding: 20px 22px;
+  background: var(--rs-subtle);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow);
+}
+.rs-quote-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  margin-bottom: 12px;
+  background: var(--rs-coral);
+  color: #fff;
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.rs-quote-text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.rs-meta-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+
+.rs-fixes {
+  padding: 14px 16px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-fixes-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-  /* .hist-row itself carries no padding anymore (see .hist-row-open above) — this variant
-     swaps in for .hist-row-open entirely rather than wrapping it, so it needs its own. */
-  padding: 20px 64px 20px 28px;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
+.rs-fixes-head span:last-child {
+  color: var(--rs-muted);
+}
+
+.rs-fixes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rs-fix-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.rs-fix-checkbox {
+  position: relative;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  border: 1.5px solid var(--rs-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+}
+.rs-fix-checkbox-input {
+  position: absolute;
+  inset: 0;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  opacity: 0;
+}
+.rs-fix-checkbox:has(.rs-fix-checkbox-input:focus-visible) {
+  outline: 2px solid var(--rs-coral);
+  outline-offset: 2px;
+}
+.rs-fix-row.is-checked .rs-fix-checkbox {
+  background: var(--rs-lime);
+}
+.rs-fix-text {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--rs-ink);
+}
+.rs-fix-row.is-checked .rs-fix-text {
+  color: var(--rs-muted);
+  text-decoration: line-through;
+}
+
+.rs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--rs-ink);
+}
+.rs-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rs-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+  cursor: pointer;
+}
+.rs-action-btn:hover {
+  background: var(--rs-subtle);
+}
+.rs-action-btn--accent {
+  background: var(--rs-lilac);
+}
+.rs-action-btn--accent:hover {
+  background: #d3c2ff;
+}
+.rs-action-btn.is-copied {
+  background: var(--rs-lime);
+}
+.rs-cta-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  background: var(--rs-lime);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+  cursor: pointer;
+}
+.rs-cta-btn:hover:not(:disabled) {
+  background: var(--rs-lime-dk);
+}
+.rs-cta-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.rs-cta-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--rs-coral);
+}
+
+/* ===========================================================================
+   2c. Chat — "Roaster Studio — Clean Neu-Brutalist Chat". Reuses the same --rs-*
+   tokens and several of Home's own classes verbatim (.rs-verdict/-head/-dot/-target*,
+   .rs-persona-card/-icon/-name/-note/-radio*, .rs-hero*, .roaster-studio, .hidden) —
+   see CLAUDE.md/WORK_LOG.md for the fabricated-content items dropped from the mockup
+   (engine name is dev-only same as modelUsed elsewhere, ego-integrity/ego-defended/
+   tech-stack-audit/per-message severity+ego-deduction/evidence-citations/burns-and-
+   tokens-consumed all have no backend field and were left out entirely, not faked).
+   Only reachable signed-in — ChatLockedPanel.jsx is the full-page gate otherwise.
+   =========================================================================== */
+.rs-verdict--compact {
+  box-shadow: var(--rs-shadow-lg);
+}
+
+/* Hero's secondary badge (e.g. "Active confrontation") — sits next to .rs-hero-badge. */
+.rs-hero-badge--alt {
+  background: var(--rs-card);
+}
+
+.rs-target-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-target-pill-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rs-ink);
+}
+
+.rs-original-verdict {
+  position: relative;
+  padding: 16px 14px 14px;
+  background: var(--rs-lilac);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-original-verdict-tag {
+  position: absolute;
+  top: -11px;
+  left: 10px;
+  padding: 2px 6px;
+  background: var(--rs-ink);
+  color: var(--rs-card);
+  border: 1px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.rs-original-verdict-text {
+  margin: 0;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--rs-ink);
+}
+
+.rs-meta-cell {
+  padding: 8px 10px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+}
+.rs-meta-cell-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+.rs-meta-cell-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rs-ink);
+}
+.rs-meta-cell-value--coral {
+  color: var(--rs-coral);
+}
+
+/* Rebuttals-remaining meter — real data only. Absent (no rows drawn at all) until the
+   first real send populates it; see ChatThread.jsx's rateLimitInfo. */
+.rs-quota-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.rs-quota-row span:last-child {
+  color: var(--rs-coral);
+}
+.rs-quota-track {
+  height: 14px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  padding: 2px;
+}
+.rs-quota-fill {
+  height: 100%;
+  background: var(--rs-lime);
+}
+.rs-quota-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rs-muted);
+}
+.rs-panel-action {
+  margin-top: 14px;
+}
+
+/* Dialogue stream */
+.rs-thread {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--rs-canvas);
+  min-height: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.rs-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 88%;
+}
+.rs-msg--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.rs-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-msg-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: var(--rs-ink);
+  color: var(--rs-lime);
+  font-size: 12px;
+  border: 1px solid var(--rs-ink);
+}
+.rs-msg-role {
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-msg--user .rs-msg-role {
+  padding: 1px 6px;
+  background: var(--rs-lime);
+  border: 1px solid var(--rs-ink);
+}
+.rs-msg-time {
+  color: var(--rs-muted);
+  font-weight: 600;
+}
+.rs-msg-bubble {
+  padding: 12px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rs-msg--user .rs-msg-bubble {
+  background: var(--rs-subtle);
+}
+.rs-msg-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--rs-ink);
+  white-space: pre-wrap;
+}
+.rs-msg-text code {
+  background: var(--rs-subtle);
+  border: 1px solid var(--rs-ink);
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.rs-msg-foot {
+  padding-top: 6px;
+  border-top: 1.5px solid var(--rs-ink);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.rs-msg-copy {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-decoration: underline;
+  color: var(--rs-muted);
+  cursor: pointer;
+}
+.rs-msg-copy:hover {
+  color: var(--rs-ink);
+}
+.rs-msg-stamp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-lime-dk);
+}
+
+.rs-chat-empty {
+  padding: 40px 20px;
+  text-align: center;
+}
+.rs-chat-empty-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.rs-chat-empty-copy {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--rs-muted);
+}
+
+.rs-retort-bar {
+  padding: 12px 24px;
+  background: var(--rs-subtle);
+  border-top: var(--rs-border-thick);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rs-retort-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+.rs-retort-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rs-retort-chip {
+  padding: 6px 10px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+  cursor: pointer;
+}
+.rs-retort-chip:hover:not(:disabled) {
+  background: var(--rs-lime);
+}
+.rs-retort-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.rs-composer {
+  padding: 16px 24px;
+  background: var(--rs-card);
+  border-top: var(--rs-border-thick);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rs-composer-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 12px 14px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  color: var(--rs-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 22px;
+  outline: none;
+}
+.rs-composer-textarea:focus {
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-composer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rs-composer-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-composer-count {
+  color: var(--rs-muted);
+}
+.rs-composer-count--over {
+  color: var(--rs-coral);
+}
+.rs-composer-saved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--rs-lime-dk);
+  text-transform: uppercase;
+}
+.rs-composer-saved-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rs-lime-dk);
+}
+.rs-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rs-composer-clear {
+  padding: 9px 16px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-composer-clear:hover:not(:disabled) {
+  background: var(--rs-subtle);
+}
+.rs-composer-send {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--rs-lime);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-composer-send:hover:not(:disabled) {
+  background: var(--rs-lime-dk);
+}
+.rs-composer-send:disabled {
+  background: var(--rs-subtle);
+  color: var(--rs-muted);
+  cursor: not-allowed;
+}
+
+.rs-safety-note {
+  padding: 10px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+
+/* Conversation list (/chat) */
+.rs-convo-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rs-convo-row {
+  position: relative;
+  display: block;
+  padding: 14px 16px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.rs-convo-row:hover {
+  background: var(--rs-subtle);
+}
+.rs-convo-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.rs-convo-persona {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-ink);
+}
+.rs-convo-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--rs-muted);
+}
+.rs-convo-message {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--rs-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rs-convo-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--rs-muted);
+}
+.rs-convo-badge {
+  padding: 1px 6px;
+  background: var(--rs-subtle);
+  border: 1px solid var(--rs-ink);
+}
+.rs-convo-delete {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-decoration: underline;
+  color: var(--rs-muted);
+  cursor: pointer;
+}
+.rs-convo-delete:hover {
+  color: var(--rs-coral);
+}
+.rs-convo-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--rs-coral-soft);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+}
+.rs-convo-confirm-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rs-ink);
+}
+.rs-convo-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+.rs-convo-confirm-yes {
+  padding: 7px 14px;
+  background: var(--rs-coral);
+  color: #fff;
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-convo-confirm-cancel {
+  padding: 7px 14px;
+  background: var(--rs-card);
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-convo-load-more {
+  align-self: center;
+  margin-top: 4px;
+  padding: 10px 20px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-convo-load-more:hover:not(:disabled) {
+  background: var(--rs-subtle);
+}
+.rs-convo-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--rs-coral);
+}
+
+/* Sign-in gate (ChatLockedPanel.jsx) — a full-page takeover, no chat UI at all, rather
+   than a real URL redirect: see CLAUDE.md's "Auth & persistence" — a shared /chat or
+   /chat/:id link must never dead-end, so this stays on the same URL instead of
+   navigating elsewhere (there's also no dedicated sign-in route to redirect to). Relies
+   on .roaster-studio's own min-height: 100% (see that rule) to reach the footer instead
+   of a min-height of its own. */
+.rs-gate {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 40px 28px 80px;
+  text-align: center;
+}
+.rs-gate-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  border: var(--rs-border);
+  font-size: 24px;
+  background: var(--rs-card);
+}
+.rs-gate-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.rs-gate-copy {
+  margin: 12px 0 22px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--rs-muted);
+}
+.rs-gate-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Shared two-click destructive confirm — used by Layout.jsx's account panel and
+   Privacy.jsx's account delete (never by History.jsx, which now uses .rs-convo-confirm*
+   from the Chat redesign for its own per-row delete — see the "8. History page" section
+   below). Kept as its own block since it no longer has a natural home in either the old
+   dark-system History section or the new .rs-* one. */
 .hist-row-confirm-text {
   font-size: 14px;
   color: var(--ink);
@@ -1492,11 +2316,13 @@ a:hover {
   min-height: var(--touch-44);
   padding: 0 16px;
   border: 1px solid var(--rule);
+  border-radius: var(--radius);
   background: transparent;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   cursor: pointer;
 }
 .hist-row-confirm-yes {
@@ -1505,7 +2331,7 @@ a:hover {
 }
 .hist-row-confirm-yes:hover {
   background: var(--accent);
-  color: #000;
+  color: #09090b;
 }
 .hist-row-confirm-cancel {
   color: var(--ink-2);
@@ -1513,363 +2339,458 @@ a:hover {
 .hist-row-confirm-cancel:hover {
   color: var(--ink);
 }
-.hist-delete-error {
-  margin: 0;
-  padding: 14px 28px;
-  font-size: 13px;
-  color: var(--accent);
-  border-bottom: 1px solid var(--rule-2);
-}
 
 /* ===========================================================================
-   9. Chat list — reuses .hist-row (the positioning shell) and the delete/confirm
-   classes wholesale; only the row's own content shape is new. A history row identifies a
-   roast by source/persona/severity/date across four columns because those are four
-   independent facts; a chat row is a conversation, best identified by what was actually
-   said, so it's two lines instead: a kicker (persona · source, tertiary) with the date,
-   then the last message (primary) below it — reusing the exact --ink-row-3/--ink token
-   pair .hist-row-date/.hist-row-handle already established for that tertiary/primary
-   split, not a new one.
+   8. History page — rebuilt against the "Roaster Studio — Neu-Brutalist History
+   Archive" mockup (the only non-Obsidian History screen in the Stitch project; no
+   screen named exactly "Clean Neu-Brutalist History" exists). Reuses Home/Chat's own
+   .rs-* tokens and several of their classes verbatim: .rs-card/-field-head/-label/
+   -hint, .rs-input, .rs-demo-btn, .rs-idle*, .rs-error*, .rs-original-verdict/-tag/
+   -text (the same notched-quote treatment Chat's target-and-verdict panel uses),
+   .rs-action-btn, .rs-cta-btn, .rs-convo-confirm, .rs-convo-load-more, .rs-convo-error
+   (Chat list's own per-row confirm/pagination). Dropped from the mockup, not hardcoded — see
+   WORK_LOG.md: the entire "ephemeral local storage / 48h auto-purge / connect account
+   to vault permanently" framing (History is already signed-in-only and every save is
+   already permanent, so that premise doesn't apply), numbered "Page 1 of 1" pagination
+   (the real backend only supports cursor-based "load more", no total count), the
+   per-card "Docket Status" pill and remaining-counter-arguments text (no real concept
+   of roast "status" in this data model), and the "(ACTIVE REBUTTAL)" tag on one card
+   (the list query doesn't join against conversations, so this isn't actually known).
    =========================================================================== */
-.chat-row-open {
+.rs-history-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  padding: 20px 64px 20px 28px;
-  color: inherit;
-  text-decoration: none;
-  transition: background-color 0.18s;
+  gap: 20px;
 }
-.chat-row-open:hover,
-.chat-row-open:focus-visible {
-  background: var(--ground-2);
-}
-.chat-row-top {
+.rs-filter-row {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
   justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+}
+.rs-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rs-filter-label {
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+}
+.rs-filter-pill {
+  padding: 5px 10px;
+  background: var(--rs-card);
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.rs-filter-pill:hover:not(.is-active) {
+  background: var(--rs-subtle);
+}
+.rs-filter-pill.is-active {
+  background: var(--rs-lime);
+  box-shadow: var(--rs-shadow-sm);
+}
+
+.rs-docket {
+  background: var(--rs-card);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow-lg);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
-.chat-row-kicker {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-row-3);
-}
-.chat-row-date {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-row-3);
-  white-space: nowrap;
-}
-.chat-row-message {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 17px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-/* ===========================================================================
-   10. Chat thread (/chat/:id) — desktop is a normal flowing page: the context bar is
-   just another .row, the transcript grows with its content, the composer sits in flow
-   right after it, same as every other route. Only at the 600px breakpoint below does
-   this swap to the fixed shell the handoff calls for (mobile is the priority surface for
-   chat) — see that query for the mechanism.
-   =========================================================================== */
-.chat-context-bar {
+.rs-docket-meta {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
 }
-.chat-context-head {
+.rs-docket-num {
+  padding: 3px 7px;
+  background: var(--rs-ink);
+  color: #fff;
+}
+.rs-docket-source {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 18px 28px;
-}
-.chat-context-back {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 700;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1.5px solid var(--rs-ink);
+  background: var(--rs-lime);
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: color 0.18s;
 }
-.chat-context-back:hover {
-  color: var(--accent);
+.rs-docket-identifier {
+  padding: 3px 8px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-/* Plain text, deliberately not a button — the persona is locked server-side for this
-   conversation's whole life (see api/conversations.js), so nothing here should invite a
-   click the way .chat-context-toggle below genuinely does. */
-.chat-context-persona {
-  font-size: 11px;
-  font-weight: 700;
+.rs-docket-persona {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--rs-lilac);
+  border: 1.5px solid var(--rs-ink);
+}
+.rs-docket-persona-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rs-ink);
+}
+.rs-docket-severity {
+  padding: 3px 8px;
+  border: 1.5px solid var(--rs-ink);
+  background: var(--rs-subtle);
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--accent);
 }
-.chat-context-meta {
-  font-size: 11px;
-  font-weight: 700;
+.rs-docket-severity--medium {
+  background: var(--rs-lime);
+}
+.rs-docket-severity--destroy-me {
+  background: var(--rs-coral);
+  color: #fff;
+}
+.rs-docket-time {
+  margin-left: auto;
+  color: var(--rs-muted);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--ink-2);
-}
-/* Real numbers from the last message's own response (api/messages.js's `rateLimit`),
-   never shown until then — there's no endpoint this page can ask for the chat tier's
-   remaining count before a first send, and a fabricated number would be worse than none. */
-.chat-context-rate {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-3);
-}
-.chat-context-spacer {
-  flex: 1;
-}
-.chat-context-toggle {
-  background: none;
-  padding: 8px 14px;
-  border: 1px solid var(--rule);
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  cursor: pointer;
-  transition: color 0.18s, border-color 0.18s;
-}
-.chat-context-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.chat-context-roast {
-  padding: 0 28px 24px;
-  border-bottom: 1px solid var(--rule-2);
-  animation: r-fade 0.25s ease-out both;
-}
-.chat-context-roast-text {
-  margin: 0 0 16px;
-  max-width: 70ch;
-  font-size: 16px;
-  line-height: 28px;
-  color: var(--ink);
-  text-wrap: pretty;
-}
-.chat-context-tips {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 14px;
-  line-height: 24px;
-  color: var(--ink-row-2);
-}
-.chat-context-danger {
-  padding: 14px 28px;
-  border-bottom: 1px solid var(--rule-2);
-}
-.chat-context-delete {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--ink-3);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  cursor: pointer;
-  transition: color 0.18s;
-}
-.chat-context-delete:hover {
-  color: var(--accent);
+  white-space: nowrap;
 }
 
-.chat-empty {
-  padding: 56px 28px;
-  background: var(--ground-2);
+/* This is the on-screen row content only — the meta bar through the fixes chips. The
+   exported "verdict image" (see History.jsx's handleExport) no longer captures this
+   node at all; it renders a separate, hidden VerdictCard (shared with RoastCard.jsx) for
+   that instead, so the two visual languages can diverge without one constraining the
+   other. */
+.rs-docket-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
-.chat-empty-title {
-  margin-bottom: 16px;
-  font-size: 11px;
+.rs-docket-findings-label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink);
+  color: var(--rs-muted);
 }
-.chat-empty-copy {
-  margin: 0 0 24px;
-  max-width: 60ch;
-  font-size: 16px;
-  line-height: 26px;
-  color: var(--ink-2);
-  text-wrap: pretty;
-}
-.chat-chips {
+.rs-docket-findings {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+.rs-docket-finding-chip {
+  padding: 5px 9px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.rs-docket-actions {
+  padding: 14px;
+  background: var(--rs-subtle);
+  border: var(--rs-border);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
-.chat-chip {
-  padding: 12px 18px;
-  background: transparent;
-  border: 1px solid var(--rule);
-  color: var(--ink-2);
-  font-size: 13px;
-  cursor: pointer;
-  transition: color 0.18s, border-color 0.18s;
+.rs-docket-cta {
+  width: 100%;
+  justify-content: center;
 }
-.chat-chip:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* Same terminal-printing treatment as .roast-body/.stream-text (see api/roast.js's own
-   streaming section), at a smaller size — a chat reply is one turn in a back-and-forth,
-   not the single centerpiece a roast is. */
-.chat-message {
-  padding: 24px 28px;
-  border-bottom: 1px solid var(--rule-2);
-}
-.chat-message--assistant {
-  background: var(--ground-2);
-}
-.chat-message-role {
-  display: block;
-  margin-bottom: 10px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-3);
-}
-.chat-message--assistant .chat-message-role {
-  color: var(--accent);
-}
-.chat-message-text {
-  margin: 0;
-  max-width: 65ch;
-  font-size: 17px;
-  line-height: 28px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  white-space: pre-wrap;
-}
-.caret--sm {
-  width: 9px;
-  height: 17px;
-  margin-left: 3px;
-  vertical-align: -2px;
-}
-.chat-message-error {
-  border-bottom: 1px solid var(--rule-2);
-}
-
-.chat-composer {
+.rs-docket-action-row {
   display: flex;
-  align-items: stretch;
-  border-top: 2px solid var(--rule);
+  gap: 8px;
 }
-.chat-composer-input {
+.rs-docket-action-row .rs-action-btn {
   flex: 1;
-  min-width: 0;
-  min-height: 64px;
-  max-height: 200px;
-  padding: 20px 28px;
-  background: transparent;
-  border: 0;
-  color: var(--ink);
-  font-size: 16px;
-  line-height: 24px;
-  resize: none;
-  outline: none;
+  justify-content: center;
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
 }
-.chat-composer-send {
-  flex-shrink: 0;
-  padding: 0 28px;
-  background: var(--accent);
-  border: 0;
-  color: #000;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: opacity 0.18s;
-}
-.chat-composer-send:disabled {
-  opacity: 0.4;
-  cursor: default;
+.rs-action-btn--danger:hover {
+  background: var(--rs-coral-soft);
 }
 
 /* ===========================================================================
-   /privacy
+   9. Chat list — ChatList.jsx was rebuilt against the "Roaster Studio — Clean
+   Neu-Brutalist Chat" mockup as its own page (see the "2c. Chat" section above) and no
+   longer shares row markup with History (.hist-card etc.) — its rows are .rs-convo-*
+   now. The dark-system rules this section used to hold were deleted with the markup.
    =========================================================================== */
-.privacy-body {
-  padding: 32px 28px;
+
+/* ===========================================================================
+   10. Chat thread (/chat/:id) — the dark-system chat markup this section used to style
+   (.chat-context-*, .chat-message*, .chat-empty*, .chat-chips*, .chat-composer*) is gone;
+   ChatThread.jsx was rebuilt against the "Roaster Studio — Clean Neu-Brutalist Chat"
+   mockup and now uses .rs-* classes (see the "2c. Chat" section above, alongside
+   Home's own .rs-* rules) instead. Nothing here was left dead — it was deleted with the
+   markup that used it. See WORK_LOG.md for the redesign and why the old mobile-only
+   fixed-height shell (.app-root:has(.chat-thread)) didn't carry over: the new page has
+   a hero and a 3-card left column above the conversation, which doesn't fit a
+   no-page-scroll model the way the old minimal layout did — mobile now scrolls
+   normally, with only the transcript itself internally scrollable (see .rs-thread).
+   =========================================================================== */
+
+/* ===========================================================================
+   /privacy — "Roaster Studio — Neu-Brutalist Privacy & Data". Reuses the rs- hero,
+   card, input and button classes. The mockup's invented claims (sandbox runtime, cipher
+   names, hour-level purge timers, fake log terminal, incognito, export and cache-purge
+   buttons) are deliberately absent — every line on the page is a real property of this
+   app, see Privacy.jsx.
+   =========================================================================== */
+.rs-privacy-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+  gap: 28px;
+  align-items: start;
+}
+.rs-privacy-glance {
+  gap: 10px;
+  padding: 16px 18px;
+  box-shadow: var(--rs-shadow-lg);
+}
+.rs-privacy-glance-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.rs-privacy-glance-row span {
+  color: var(--rs-muted);
+}
+.rs-privacy-glance-row strong.is-on {
+  background: var(--rs-lime);
+  padding: 0 4px;
+}
+.rs-privacy-stack {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 16px;
+  gap: 36px;
 }
-.privacy-copy {
+.rs-privacy-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.rs-privacy-tag {
+  padding: 2px 8px;
+  background: var(--rs-ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-privacy-section-title {
   margin: 0;
-  max-width: 68ch;
-  font-size: 15px;
-  line-height: 26px;
-  color: var(--ink-2);
-  text-wrap: pretty;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
-.privacy-copy strong {
-  color: var(--ink);
+.rs-privacy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
 }
-.privacy-copy a {
-  color: var(--accent);
+.rs-privacy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  background: var(--rs-card);
+  border: var(--rs-border-thick);
+  box-shadow: var(--rs-shadow);
 }
-.privacy-copy a:hover {
-  color: var(--accent-dk);
+.rs-privacy-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
-.privacy-link-button {
+.rs-privacy-chip {
+  padding: 2px 8px;
+  background: var(--rs-subtle);
+  border: 1.5px solid var(--rs-ink);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.rs-privacy-chip--lime {
+  background: var(--rs-lime);
+}
+.rs-privacy-chip--lilac {
+  background: var(--rs-lilac);
+}
+.rs-privacy-card-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.rs-privacy-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: rgba(18, 18, 18, 0.78);
+}
+.rs-privacy-copy strong {
+  color: var(--rs-ink);
+}
+.rs-privacy-controls {
+  gap: 0;
+  padding: 0;
+}
+.rs-privacy-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 22px;
+}
+.rs-privacy-control + .rs-privacy-control {
+  border-top: 1.5px solid var(--rs-ink);
+}
+.rs-privacy-control > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rs-privacy-link-btn {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.rs-privacy-link-button {
+  padding: 0;
   background: none;
   border: 0;
-  padding: 0;
   font: inherit;
-  color: var(--accent);
+  font-weight: 700;
+  color: var(--rs-ink);
   text-decoration: underline;
   cursor: pointer;
 }
-.privacy-link-button:hover {
-  color: var(--accent-dk);
+.rs-privacy-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  background: var(--rs-coral-soft);
+  border: var(--rs-border-thick);
+  box-shadow: 6px 6px 0 0 var(--rs-coral);
 }
-.privacy-delete-button {
-  min-height: var(--touch-44);
-  padding: 0 20px;
-  border: 1px solid var(--accent-dk);
-  background: transparent;
-  color: var(--accent);
-  font-size: 11px;
+.rs-privacy-danger-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--rs-ink);
+}
+.rs-privacy-danger-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.rs-privacy-danger-tag {
+  padding: 3px 10px;
+  background: var(--rs-coral);
+  color: #fff;
+  border: 1.5px solid var(--rs-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
+}
+.rs-privacy-unlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 16px 18px;
+  background: var(--rs-card);
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow);
+}
+.rs-privacy-unlock-field {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: 8px;
+}
+.rs-privacy-wipe-btn {
+  padding: 13px 20px;
+  background: var(--rs-coral);
+  color: #fff;
+  border: var(--rs-border);
+  box-shadow: var(--rs-shadow-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
   cursor: pointer;
 }
-.privacy-delete-button:hover {
-  background: var(--accent);
-  color: #000;
+.rs-privacy-wipe-btn:disabled {
+  background: #d4d4d8;
+  color: #71717a;
+  cursor: not-allowed;
 }
+@media (max-width: 900px) {
+  .rs-privacy-hero,
+  .rs-privacy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rs-privacy-control {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* Shared two-click confirm bar bits still used by Layout.jsx's header account panel. */
 .privacy-confirm {
   width: 100%;
   max-width: 60ch;
@@ -1879,140 +2800,23 @@ a:hover {
   padding: 20px;
   background: var(--ground-2);
   border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--accent);
 }
 .privacy-error {
   margin: 0;
   font-size: 13px;
   color: var(--accent);
 }
-.hist-load-more {
-  width: 100%;
-  padding: 20px 28px;
-  background: transparent;
-  border: 0;
-  color: var(--accent-dk);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  transition: color 0.18s;
-}
-.hist-load-more:hover {
-  color: var(--accent);
-}
-.history-empty-body {
-  padding: 48px 28px;
-  background: var(--ground-2);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 20px;
-}
-.history-empty-copy {
-  margin: 0;
-  max-width: 54ch;
-  font-size: 15px;
-  line-height: 26px;
-  color: var(--ink-2);
-  text-wrap: pretty;
-}
-.history-empty-actions {
-  display: flex;
-  gap: 0;
-  margin-top: 4px;
-}
-.history-empty-provider {
-  display: flex;
-  align-items: center;
-  padding: 15px 24px;
-  min-height: var(--touch-48);
-  border: 0;
-  color: #000;
-  background: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-}
-.history-empty-provider--secondary {
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-left: 0;
-  color: var(--ink);
-  transition: color 0.18s, border-color 0.18s;
-}
-.history-empty-provider--secondary:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* This panel's own min-height is the only thing keeping a short list from looking too
-   sparse — now that .app-root doesn't force a full-viewport height (see "Layout shell"
-   above), the footer already sits flush after this row on its own, on every route, so
-   there's no leftover space left for a flex:1 here to grow into. */
-.history-next-row {
-  min-height: 260px;
-}
-.history-next-panel {
-  padding: 44px 28px;
-  background: var(--ground-2);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 32px;
-}
-.history-next-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 16px;
-}
-.history-next-title {
-  font-size: 20px;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-.history-next-body {
-  margin: 0;
-  max-width: 54ch;
-  font-size: 15px;
-  line-height: 26px;
-  color: var(--ink-row-2);
-  text-wrap: pretty;
-}
-.history-next-cta {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 15px 24px;
-  min-height: var(--touch-48);
-  width: fit-content;
-  background: var(--accent);
-  border: 0;
-  color: #000;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-  white-space: nowrap;
-}
 
 /* ===========================================================================
-   9. /r/:slug — shared roast shell
+   11. /r/:slug — shared roast shell (untouched by this redesign; restyled here
+   only so it doesn't look visually orphaned next to the other routes — no
+   markup or behavior change, see src/routes/SharedRoast.jsx).
    =========================================================================== */
-.share-kicker {
-  margin-bottom: 28px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
-}
+
 .share-body {
-  padding: 56px 28px 52px;
+  padding: 52px 28px 48px;
   background: var(--ground-2);
 }
 .share-placeholder-copy {
@@ -2023,56 +2827,46 @@ a:hover {
   color: var(--ink-2);
   text-wrap: pretty;
 }
-.share-tips-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 20px 28px;
-  border-bottom: 1px solid var(--rule-2);
-}
-.share-tips-box {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 5px;
-  border: 1px solid var(--ink-3);
-}
-.share-tips-text {
-  font-size: 16px;
-  line-height: 28px;
-  max-width: 64ch;
-  color: var(--ink);
-}
+
 .cta {
-  padding: 64px 28px;
+  padding: 60px 28px;
   border-bottom: 2px solid var(--rule);
 }
 .cta-label {
-  font-size: 28px;
+  font-family: var(--font-display);
+  font-size: 27px;
+  font-weight: 600;
   line-height: 1.3;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   color: var(--accent);
   max-width: 34ch;
   text-wrap: pretty;
 }
 .cta-button {
-  margin-top: 32px;
+  margin-top: 30px;
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 22px 28px;
+  padding: 20px 26px;
   min-height: 56px;
   background: var(--accent);
   border: 0;
-  color: #000;
-  font-size: 15px;
+  border-radius: var(--radius);
+  color: #09090b;
+  font-family: var(--font-mono);
+  font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   cursor: pointer;
+  transition: box-shadow 0.18s;
+}
+.cta-button:hover {
+  box-shadow: var(--shadow-hard);
 }
 .cta-note {
-  margin-top: 20px;
+  margin-top: 18px;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -2081,217 +2875,163 @@ a:hover {
 }
 
 /* ===========================================================================
-   10. Footer
+   12. Footer
    =========================================================================== */
 .footer {
   display: flex;
-  align-items: stretch;
-  border-top: 2px solid var(--rule);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 28px;
+  background: var(--rs-card);
+  border-top: var(--rs-border-thick);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .footer-name {
-  padding: 24px 28px;
-  border-right: 1px solid var(--rule);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink);
+  font-weight: 700;
+  color: var(--rs-ink);
 }
 .footer-link {
-  display: flex;
-  align-items: center;
-  padding: 24px 28px;
-  border-right: 1px solid var(--rule);
-  font-size: 11px;
+  color: var(--rs-muted);
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
+  letter-spacing: 0.14em;
+  font-weight: 700;
   transition: color 0.18s;
 }
 .footer-link:hover {
-  color: var(--accent);
+  color: var(--rs-ink);
 }
 .footer-spacer {
   flex: 1;
 }
 .footer-brand {
-  padding: 24px 28px;
-  border-left: 1px solid var(--rule);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .footer-brand-mark {
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
+  width: 10px;
+  height: 10px;
+  background: var(--rs-lime);
+  border: 1.5px solid var(--rs-ink);
 }
 .footer-brand-name {
-  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-2);
+  letter-spacing: 0.14em;
+  color: var(--rs-muted);
 }
 
 /* ===========================================================================
-   Breakpoints — 1180 (type only) / 900 (columns collapse) / 600 (gutter
-   collapses, header stacks to three bands) / 380 (small corrections).
+   Breakpoints — 1180 (type only) / 1024 (studio grid collapses) / 900
+   (columns collapse) / 600 (gutter collapses, header collapses behind a hamburger) /
+   380 (small corrections).
    =========================================================================== */
 @media (max-width: 1180px) {
-  .hero-main { padding: 52px 24px 46px; }
-  .hero-title { font-size: 78px; line-height: 0.84; letter-spacing: -0.075em; }
-  .roast-body, .stream-text { font-size: 22px; line-height: 36px; }
-  .caret { width: 11px; height: 21px; }
-  .source-card, .persona-cell { min-height: 88px; padding: 18px 20px; }
+  
+  
+}
+
+@media (max-width: 1024px) {
+  /* Both the dark-system studio split (unused by Home now, kept dead-simple to leave
+     alone) and Home's own .rs-grid collapse at the same breakpoint, controls first,
+     output second — matching every other route's single-column flow. */
+  .rs-grid { grid-template-columns: 1fr; }
+  .rs-col-verdict { position: static; }
 }
 
 @media (max-width: 900px) {
   .row { grid-template-columns: 88px 1fr; }
   .row > .row-label { padding: 20px 14px; }
 
-  .hero-title { font-size: 60px; line-height: 0.86; letter-spacing: -0.06em; }
-  .hero-copy { max-width: 60ch; }
+  
+  
 
-  .source-grid, .persona-grid { grid-template-columns: 1fr 1fr; }
-  .source-card:nth-child(odd), .persona-cell:nth-child(odd) { border-left: 0; }
-  .source-card:nth-child(n + 3), .persona-cell:nth-child(n + 3) { border-top: 1px solid var(--rule-2); }
-  .source-card:nth-child(n + 3) .source-card-bar,
-  .persona-cell:nth-child(n + 3) .persona-cell-bar { top: -1px; }
-  .persona-grid > .persona-cell:nth-child(3) { grid-column: span 2; }
-
-  .hist-row-open { grid-template-columns: 1fr 1fr; }
-
-  .out-body { padding: 32px 24px 36px; }
-  .roast-body, .stream-text { font-size: 20px; line-height: 32px; }
-  .caret { width: 10px; height: 19px; }
+  .rs-hero-title { font-size: 40px; }
 }
 
 @media (max-width: 600px) {
-  .header { display: block; }
-  .brand { border-right: 0; border-bottom: 1px solid var(--rule-2); padding: 15px 20px; }
-  .nav { display: flex; border-bottom: 1px solid var(--rule-2); }
-  .nav-item { flex: 1; justify-content: center; min-height: var(--touch-48); border-left: 0; border-right: 1px solid var(--rule-2); }
+  /* Top bar is only logo + quota + hamburger; the nav and the account controls live in a
+     panel that opens below it (Layout.jsx's menuOpen). They stay in the same DOM — just
+     hidden here until .is-menu-open — so desktop markup and styling are untouched. */
+  .header { flex-wrap: wrap; padding: 12px 16px; gap: 10px; min-height: 0; }
+  .brand { order: 1; gap: 8px; }
+  .brand-name { font-size: 17px; }
+  .quota-badge { order: 2; margin-left: auto; padding: 4px 8px; gap: 6px; font-size: 9px; }
+  .menu-toggle { order: 3; display: flex; }
   .hspacer { display: none; }
+  .nav, .auth, .hmeta { display: none; }
+  .header.is-menu-open .nav,
+  .header.is-menu-open .auth,
+  .header.is-menu-open .hmeta {
+    display: flex;
+    width: 100%;
+    animation: r-fade 0.18s ease-out both;
+  }
+  .header.is-menu-open .nav { order: 10; flex-wrap: wrap; padding-top: 12px; border-top: var(--rs-border); }
+  .header.is-menu-open .auth,
+  .header.is-menu-open .hmeta { order: 11; }
+  .nav-item { flex: 1 1 auto; justify-content: center; min-height: var(--touch-44); }
   /* Desktop drops the panel below the trigger via position: absolute — it isn't part of
      the flex flow at all there. Static positioning here puts it back in flow as a sibling
      of .auth-trigger/.auth-user inside .auth's flex row, so without flex-wrap + a forced
      full-width basis the two sit side by side (crushed) instead of the trigger row then
      the panel full-width beneath it. Applies to both panels — same box, same reason. */
-  .signin-panel, .account-panel { position: static; width: 100%; flex: 1 1 100%; border-left: 0; border-right: 0; }
-  .auth-trigger { border-left: 0; justify-content: center; }
-  .auth { display: flex; flex-wrap: wrap; }
-  .auth-trigger, .auth-user, .auth-signout { flex: 1; justify-content: center; min-height: var(--touch-48); }
-  .auth-signout { flex: 0 0 auto; padding: 0 20px; }
+  .signin-panel, .account-panel { position: static; width: 100%; box-shadow: none; }
+  .auth { flex-wrap: wrap; }
   .hmeta { width: 100%; }
-  .hmeta-item { flex: 1; padding: 14px 20px; border-left: 0; }
+  .hmeta-item { flex: 1; text-align: center; }
 
   .row { display: block; }
   .row > .row-label { border-right: 0; border-bottom: 1px solid var(--rule); padding: 13px 20px; display: flex; gap: 10px; }
   .row > .row-label:empty { display: none; }
 
-  .hero-main { padding: 36px 20px 34px; }
-  .hero-title { font-size: 44px; line-height: 0.9; letter-spacing: -0.045em; }
-  .hero-copy { font-size: 15px; line-height: 27px; }
+  
+  
+  
 
-  .source-card, .persona-cell { min-height: 80px; padding: 15px 18px; }
+  .rs-hero { padding: 28px 16px 0; }
+  .rs-hero-title { font-size: 30px; }
+  .rs-grid { padding: 20px 16px 40px; gap: 20px; }
+  .rs-card, .rs-verdict-body { padding: 16px; }
+  .rs-platform-grid { grid-template-columns: repeat(2, 1fr); }
+  .rs-actions { flex-direction: column; align-items: stretch; }
+  .rs-actions-left { justify-content: space-between; }
+  .rs-cta-btn { justify-content: center; }
+  .rs-verdict-head { padding: 12px 16px; }
+  .rs-verdict-target-value { max-width: 28ch; }
 
-  .link-row { padding: 0 20px; }
-  .link-input { font-size: 17px; padding: 22px 0; }
+  .rs-docket { padding: 14px 16px; }
+  .rs-docket-time { margin-left: 0; }
+  .rs-docket-action-row { flex-direction: column; }
 
-  .file-body { padding: 18px 20px; gap: 14px; }
-  .drop { flex-direction: column; align-items: flex-start; gap: 10px; padding: 20px 18px; }
-  .drop-browse { display: none; }
-  .file-row { flex-wrap: wrap; padding: 16px 18px; }
-  .file-replace { margin-left: 0; border-left: 0; padding: 10px 0; min-height: var(--touch-44); }
-  .paste-area { font-size: 16px; min-height: 96px; }
-
-  .severity-row { flex-wrap: wrap; }
-  .severity-cell { flex: 1; min-height: var(--touch-48); }
-
-  .source-prompt { padding: 20px; }
-  .source-prompt-actions { width: 100%; }
-  .source-prompt-provider { flex: 1; min-height: var(--touch-48); justify-content: center; }
-
-  .submit { padding: 22px 20px; font-size: 13px; letter-spacing: 0.14em; }
-  .rate { display: block; padding: 14px 20px; }
-  .rate-upgrade, .rate-saved { margin-top: 10px; }
-
-  .idle-body { padding: 38px 20px; }
-  .out-body { padding: 26px 20px 30px; }
-  .roast-body, .stream-text { font-size: 18px; line-height: 30px; }
-  .caret { width: 9px; height: 17px; margin-left: 3px; vertical-align: -2px; }
-
-  .error-body { padding: 26px 20px 28px; }
-  .error-msg { font-size: 17px; line-height: 26px; }
-  .retry { min-height: var(--touch-48); padding: 14px 20px; }
-
-  .fix-row { padding: 16px 20px; gap: 14px; }
-
-  .actions-grid { grid-template-columns: 1fr; }
-  .action-btn { padding: 18px 20px; min-height: 56px; border-left: 0; }
-  .action-btn + .action-btn { border-top: 1px solid var(--rule-2); }
-
-  .hist-row-open { display: block; padding: 16px 56px 16px 20px; }
-  .hist-row-open > * { padding: 3px 0; }
-  /* .hist-row-persona/-severity/-date are <span>s (inline by default) — the padding above
-     has no vertical effect on an inline element, so without this all three ran together
-     on one line instead of stacking, one field per line, the way .hist-row-source's own
-     flex column already does. Targeted rather than `.hist-row-open > *` so it doesn't also
-     flip .hist-row-source from flex to block and break its own kind/handle stacking. */
-  .hist-row-persona, .hist-row-severity, .hist-row-date { display: block; }
-  .hist-row-severity { border: 0; }
-  .hist-row-delete { top: 16px; right: 20px; }
-  .chat-row-open { padding: 16px 56px 16px 20px; }
-  .chat-row-message { font-size: 15px; }
-
-  .share-body, .out-body.share-body { padding: 26px 20px 30px; }
+  .share-body { padding: 24px 20px 28px; }
   .cta { padding: 28px 20px; }
-  .cta-label { font-size: 18px; }
+  .cta-label { font-size: 19px; }
 
-  .footer { display: block; }
-  .footer-name { border-right: 0; border-bottom: 1px solid var(--rule); padding: 18px 20px; }
-  .footer-link { border-right: 0; border-bottom: 1px solid var(--rule); padding: 18px 20px; min-height: var(--touch-44); }
+  .footer { flex-direction: column; align-items: flex-start; padding: 16px; }
   .footer-spacer { display: none; }
-  .footer-brand { border-left: 0; padding: 16px 20px; }
 
-  /* Chat thread's fixed shell — mobile only, and only the thread route (ChatList's own
-     /chat stays a normal page). The header stays visible (so chat doesn't strand someone
-     without a way back to the other tabs); the footer is what gets dropped, since a
-     scrolling-transcript-plus-pinned-composer layout has no room for it and nothing below
-     the composer needs to be reachable anyway. Done with :has() off a shared ancestor
-     (same technique .fix-row-checkbox already uses) rather than any change to
-     Layout.jsx — ChatThread.jsx's own top-level element is all the signal this needs. */
-  .app-root:has(.chat-thread) {
-    height: calc(100dvh / var(--root-zoom));
-    overflow: hidden;
-  }
-  .app-root:has(.chat-thread) .footer {
-    display: none;
-  }
-  .app-main:has(.chat-thread) {
-    display: flex;
-    min-height: 0;
-  }
-  .chat-thread {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-  }
-  .chat-context-row { flex: 0 0 auto; }
-  .chat-context-head { padding: 14px 20px; gap: 14px; }
-  .chat-context-roast { padding: 0 20px 20px; }
-  .chat-context-danger { padding: 12px 20px; }
-  .chat-transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .chat-message { padding: 18px 20px; }
-  .chat-empty { padding: 36px 20px; }
-  .chat-composer { flex: 0 0 auto; }
-  .chat-composer-input { padding: 16px 20px; font-size: 16px; }
-  .chat-composer-send { padding: 0 20px; min-height: var(--touch-48); }
+  /* Chat (/chat, /chat/:id) — normal page scroll on mobile, same as every other route;
+     only the transcript itself scrolls internally (see the base .rs-thread rule's
+     max-height). No fixed-height shell here — see the "10. Chat thread" comment above
+     for why that no longer fits this page's content. */
+  .rs-thread { padding: 16px; max-height: 60vh; }
+  .rs-msg { max-width: 100%; }
+  .rs-retort-bar, .rs-composer { padding: 12px 16px; }
+  .rs-composer-footer { align-items: flex-start; }
+}
+
+/* Below this the wordmark, quota badge and hamburger can't share one top-bar row — the
+   fire mark alone stays as the logo. */
+@media (max-width: 420px) {
+  .brand-name { display: none; }
 }
 
 @media (max-width: 380px) {
-  .hero-title { font-size: 36px; }
-  .submit { font-size: 12px; letter-spacing: 0.1em; }
+  
+  .rs-hero-title { font-size: 26px; }
+  .rs-platform-grid { grid-template-columns: 1fr 1fr; }
 }

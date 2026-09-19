@@ -6,6 +6,422 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-19 (v8, mobile header + Privacy redesign + History follow-ups)
+
+### Mobile header collapses behind a hamburger (`Layout.jsx`, `index.css`)
+The header was already a single shared component (`Layout.jsx`, rendered around every
+route via `<Outlet>`), so this was fixed once, there. At the existing `max-width: 600px`
+breakpoint (no new breakpoint) the header used to stack logo / account+sign-out / quota /
+a grid of nav buttons before any content. Now the top bar is logo + quota badge +
+hamburger; the nav and the account controls (user pill + sign out, or the sign-in trigger
+and its panel) open in a panel below it.
+- **Same DOM, no duplication.** `.nav`, `.auth` and `.hmeta` stay where they were and are
+  `display:none` at <=600px until the header has `.is-menu-open`; CSS `order` puts nav
+  first, account second. Desktop markup/styling is untouched — the only desktop-visible
+  addition is a `.menu-toggle` button that is `display:none` above 600px.
+- `menuOpen` state in `Layout.jsx`: hamburger toggles it; each `NavLink` closes it on
+  click; a `pointerdown` outside the header or `Escape` closes it. `openSignIn` (used by
+  the Privacy/History/Chat sign-in prompts) now also opens the menu, otherwise the
+  sign-in panel would be opened inside a hidden container on mobile.
+- The wordmark is hidden at <=420px (the fire mark stays as the logo): logo + real quota
+  badge + hamburger don't fit one row at phone width otherwise. Quota badge is smaller
+  on mobile but still shows the real `/api/rate-limit-status` value.
+- Verified live at this browser's real phone-width viewport (~342px) and in 320px/1280px
+  iframes: one top-bar row, panel opens with the active page highlighted, nav click
+  navigates and closes, outside tap closes, double toggle closes, no horizontal overflow,
+  desktop header still 76px with identical child positions. **Not verified**: real touch
+  taps on a physical device, the signed-out account section (signing out here would
+  have required re-authenticating; the markup is the same `.auth` container), and
+  landscape/tablet widths between 420px and 600px beyond the CSS reasoning.
+
+### Privacy (`/privacy`) rebuilt as "Roaster Studio — Neu-Brutalist Privacy & Data"
+Same rs- design system. Kept only real claims (existing copy regrouped into cards + an
+"At a glance" widget of real facts); dropped the mockup's invented sandbox/cipher/48h
+claims, fake log terminal, ticker, and the incognito/purge-cache/export buttons.
+Danger zone keeps the type-to-confirm account delete. Contact is now
+mohitesarthak74@gmail.com. Old dark Privacy-only CSS and the unused `studio-card-*`
+rules were deleted.
+
+### History follow-ups
+- Filters/search are now real server-side (`api/history.js`: `persona`, `type`, `q` via
+  `.eq`/`.ilike` with LIKE-wildcard escaping; `getHistory(token, cursor, filters)`),
+  debounced 350ms.
+- "Export card" now renders the same shared `VerdictCard` + `exportCardAsImage()` that
+  Home's `RoastCard` uses (extracted to `src/components/VerdictCard.jsx` /
+  `src/lib/exportCard.js`), off-screen at 520px so the PNG is portrait.
+
+---
+
+## 2026-09-18 (v7, History only)
+
+### Stitch redesign: History (`/history`) rebuilt as "Roaster Studio — Neu-Brutalist
+History Archive"
+Same Stitch project as Home (v5) and Chat (v6). No screen named exactly "Clean
+Neu-Brutalist History" exists — the only non-Obsidian History screen is titled
+"Roaster Studio — Neu-Brutalist History Archive" (its own markup literally comments
+"Clean Neu-Brutalist Status Box" and "ZERO FAKE PERCENTAGES/EGO/ATS SCORES", confirming
+it's the intended light-system screen despite the naming drift). `History.jsx` was
+rebuilt from scratch against it, reusing Home/Chat's tokens and several of their
+classes directly: `.rs-card`/`-field-head`/`-label`/`-hint`, `.rs-input`, `.rs-demo-btn`,
+`.rs-idle*`, `.rs-error*`, `.rs-original-verdict`/`-tag`/`-text` (the same notched-quote
+treatment as Chat's target panel), `.rs-action-btn`, `.rs-cta-btn`, and Chat list's own
+`.rs-convo-confirm*`/`-load-more`/`-error` for per-row delete and pagination.
+
+**Two small shared refactors done first, so History could reuse rather than duplicate**:
+the four platform-mark SVG icons (previously local to `InputForm.jsx`) moved to
+`src/components/PlatformIcons.jsx`; the severity display-label map (previously inlined
+separately in `InputForm.jsx` and `ChatThread.jsx`) moved to `src/lib/severity.js` once
+History needed the same mapping a third time. Also renamed `ChatLockedPanel.jsx` →
+`SignInGate.jsx` and gave it `title`/`copy` props (previously hardcoded chat-specific
+text) so History's sign-in gate could reuse the exact same full-page-takeover component
+instead of a near-duplicate.
+
+**One small real backend change, on request**: `api/history.js`'s list query only ever
+selected `{ id, type, identifier, persona, severity, created_at }` — not `roast` or
+`tips`, even though both are already stored per row. Added both to the existing SELECT
+(no schema change, no new endpoint) so each card can show the real original-verdict
+quote and real fix chips, matching what `RoastCard.jsx` already shows for a fresh roast.
+
+**Fabricated-content calls — all dropped outright, not hardcoded, since none of them
+match how this app actually works**: the mockup's entire "Vault Telemetry" companion
+box, "PERSISTENCE: EPHEMERAL LOCAL STORAGE", "AUTO-PURGE: 48H", "SAVED RECORDS: 4 OF 15
+SLOTS", and the footer's "Connect GitHub/Google to permanently vault" CTA all assume an
+anonymous-first, localStorage-based history that expires — History is already
+signed-in-only and every save is already permanent, so the whole premise is wrong, not
+just unverifiable. Also dropped: numbered "Page 1 of 1" pagination (the real backend
+only supports cursor-based "load more", no total count — kept the existing pattern,
+reusing Chat list's own button), the per-card "Docket Status" pill and "N
+counter-arguments remaining" text (no concept of roast "status" in this data model),
+and the "(ACTIVE REBUTTAL)" tag on one card (the list query doesn't join against
+conversations, so this isn't actually known). Severity display labels use the existing
+Mild/Medium/Destroy Me, not the mockup's Spicy/Nuclear, matching the earlier Home
+decision. Fake sequential "DOCKET #409" numbers were replaced with a real per-page
+display index.
+
+**Two real features added, both requested explicitly**: the search + persona/source
+filter bar is real (not a stub) but client-side only for now — it filters whatever
+page(s) of roasts are already loaded, not the caller's entire history; a small note
+appears under the filters when one is active and more pages exist, saying so honestly.
+Real backend query filtering is a separate later task. Per-row "Export Card" reuses
+`RoastCard.jsx`'s exact `html2canvas` technique, just with one ref per card (keyed by
+roast id via a `Map`) instead of the single ref that's enough on Home.
+
+**The same `/*…*/` comment bug bit twice more** (see the Chat entry below for the first
+occurrence) — a shorthand like `.rs-convo-confirm*/-load-more/-error` contains a literal
+`*/`, which prematurely closes the CSS comment and corrupts everything after it until
+the next real `*/`. Both instances caught by the production build failing outright
+("Unexpected end of input" / "Unexpected token Delim('/')"), not by review. Written out
+with commas instead of `/` shorthand everywhere in this file now.
+
+**Verified live** (dev server + `node index.js`, real signed-in account with 21 real
+saved roasts): the full card list rendering real quotes/tips/badges/dates across
+GitHub/Instagram/LinkedIn/Resume/all three personas/all three severities, persona
+filter narrowing the list, search-by-identifier narrowing it (including on an Instagram
+handle), Export Card (no console errors, download triggered), delete confirm/cancel,
+"Start Rebuttal Chat" creating a real new conversation and landing on `/chat/:id` with
+the right target/quote/severity, the signed-out gate (full cream page, no dark gap,
+History-specific copy, confirmed distinct from Chat's), and sign-out/sign-in. Mobile
+verified via the same same-origin-iframe technique — docket grid collapses to one
+column, action buttons stack full-width, meta badges wrap. **Not verified**: real
+server-side filtering (doesn't exist yet — this session's filters are client-side only,
+by design), "load more" past the first page (this account only has 21 saved roasts,
+fewer than the 25-row page size, so `cursor` never comes back non-null to test against),
+exact pixel fidelity against the mockup, and real touch behavior on an actual device.
+
+`npm run build`/`npm run lint`/`npm test` (225/225) all pass. Left uncommitted per the
+task's own instruction — nothing in this session was committed or pushed.
+
+## 2026-09-18 (v6, Chat only)
+
+### Stitch redesign: Chat (`/chat`, `/chat/:id`) rebuilt as "Roaster Studio — Clean
+Neu-Brutalist Chat"
+Same pulled Stitch project as Home's v5 pass ("Roastify Frontend Redesign",
+`projects/7127362638254684669`), this time the screen named exactly "Roaster Studio —
+Clean Neu-Brutalist Chat" (one exact match among 7 screens in the project — an
+"Obsidian Chat" version and Home/History/Privacy's own Obsidian/Clean screens were all
+out of scope). `ChatList.jsx`, `ChatThread.jsx`, and `ChatLockedPanel.jsx` were rebuilt
+from scratch against this mockup. Per the task's explicit instruction, this reuses
+Home's own tokens/classes rather than re-deriving a second palette: the mockup's
+Material-style color names (`primary-container`, `secondary-fixed`, `tertiary`, etc.)
+were mapped by role onto Home's existing `--rs-lime`/`--rs-lilac`/`--rs-coral`/
+`--rs-canvas` tokens, and several classes are reused byte-for-byte across both pages —
+`.rs-verdict`/`-head`/`-dot`/`-target*` (the dark-bar card header + target chip, used by
+both Home's RoastCard verdict card and Chat's three left-column panels + terminal
+frame), `.rs-persona-card`/`-icon`/`-name`/`-note`/`-radio*` (Chat's persona panel reuses
+Home's persona-picker card, just always-selected for the active one and `disabled` for
+the two locked ones), `.rs-hero*`, `.rs-file-check` (repurposed as the persona panel's
+"engaged" checkmark badge), `.roaster-studio`, `.hidden`. A new `.rs-verdict--compact`
+modifier (shadow-lg instead of shadow-xl) is the only real addition needed to fit the
+three smaller side-cards into the same family.
+
+**Fabricated-content calls — all flagged, none faked**: the mockup's "ENGINE:
+NEU-CYNIC-LLM-80B" ticker line and "EGO INTEGRITY: CRITICAL (12%)" stat, the "EGO
+DEFENDED 12% RECOVERING +4%" telemetry block, per-message "SEVERITY: 8.8/10"/"EGO
+DEDUCTION: -6%" tags, the "EVIDENCE: REPO/AUDIT_LOG_09.JSON" citation line, the
+"TECH STACK AUDIT: NODE/NEXT/RUST" tag, and the footer's "BURNS INCURRED"/"TOKENS
+CONSUMED" stats were all dropped outright — none of them have a backend field
+(`/api/messages` returns `{ text, messageId, rateLimit }` and nothing else; roasts/
+conversations store no tech-stack or per-message scoring data). Notably, chat doesn't
+even get a dev-only model name the way Home's `modelUsed` does — `/api/messages` never
+returns one, in dev or production — so unlike Home's meta line, there was no dev-only
+fallback to wire up here at all. The mockup's fake session codes ("#409" / "RBT-8842-AXN")
+were replaced with the conversation's real id, truncated to 8 hex characters for the
+badge. The "142 / 1000 CHARS" counter's `1000` was invented; the real server-side cap is
+`MAX_MESSAGE_LENGTH = 4000` in `api/messages.js` (a server file, not importable from the
+client bundle, so `ChatThread.jsx` duplicates the literal number with a comment, same
+necessity as `RoastCard.jsx`'s `html2canvas` background-color mirroring `--ground-2`).
+"DRAFT AUTO-SAVED" wasn't true before this pass (a draft was lost on navigating away),
+so rather than show a false label, a real small localStorage-backed draft save (keyed
+per conversation id, wrapped in try/catch) was added — flagged as a small feature added
+to make the mockup's own copy honest rather than something explicitly requested. The
+mockup's two session-action buttons ("re-run profile audit" / "export verdict dossier")
+were left unbuilt entirely — nothing in the task described this functionality and
+neither has an existing mechanism to call. The rebuttals-remaining meter keeps the
+existing, already-documented rule intact: `rateLimitInfo` starts `null` and is only ever
+set from a real `POST /api/messages` response, so the meter shows nothing until the
+first real send, same as before this pass — verified live in dev, where the chat rate
+limit is itself dev-bypassed server-side, so `rateLimit` comes back `null` even after a
+real send and the meter correctly keeps showing "shows after your first message today"
+indefinitely in that environment.
+
+**Signed-out gate**: the task asked for a hard "redirect to sign-in," but there is no
+dedicated sign-in route in this app (sign-in is a header dropdown, not a page) and
+`History.jsx`'s own documented rule is that a shared link must never dead-end or
+redirect elsewhere. Kept that existing pattern instead: both `/chat` and `/chat/:id`
+render *only* `ChatLockedPanel.jsx` when signed out — no list, no thread, no empty
+state, same URL — just restyled to the cream system rather than turned into a real
+`navigate()` call. Caught and fixed a real layout bug this surfaced: `ChatLockedPanel`
+wasn't wrapped in `.roaster-studio` at either call site, so the gate rendered on the
+dark `body` background instead of cream. Fixed by having `ChatLockedPanel` wrap itself,
+and gave `.roaster-studio` its own `min-height: 100dvh` (measured directly — a
+percentage `min-height` against `.app-main`'s real flex-resolved height didn't resolve
+in this layout shell despite `.app-main` reporting a definite computed height; `100dvh`
+sidesteps the question entirely) so a short page like this one never leaves the old
+dark background exposed in a gap above the footer.
+
+**`/chat`'s empty/list state** (not pictured in the mockup, flagged per the task's own
+request rather than silently decided): kept the existing real behavior — a real list of
+the signed-in caller's conversations if any exist, or a "nothing here yet, run a roast"
+invite if none do — restyled to the new card language (`.rs-convo-*`, new classes,
+genuinely list-specific).
+
+**Quick counter-argument injectors** are now persona-specific (`src/lib/personas.js`'s
+new `quickRetorts`, three per persona) rather than one fixed set for all three, per the
+task's own invitation to do this client-side.
+
+**CSS cleanup**: the old dark-system chat classes this redesign made dead
+(`.chat-context-*`, `.chat-message*`, `.chat-empty*`, `.chat-chips*`, `.chat-composer*`,
+`.chat-row-*`, `.chat-transcript`, `.caret--sm`, and the old mobile-only fixed-height
+shell keyed off `.app-root:has(.chat-thread)`) were deleted, not left dead. The fixed
+shell specifically was not recreated in the new design — the old minimal thread layout
+(context bar + transcript + composer, nothing else) fit a no-page-scroll model; the new
+page has a hero and a 3-card left column above the conversation, which doesn't, so
+mobile now scrolls normally with only the transcript itself internally scrollable (a
+`max-height` + `overflow-y: auto` on `.rs-thread`).
+
+**A build-breaking bug caught by the build itself, not review**: a comment written
+mid-edit contained literal `-*/.` shorthand (e.g. `.chat-context-*/.chat-message*`),
+which is a real `*/` sequence — CSS parses that as the comment's own closing delimiter,
+so everything after it started parsing as code until EOF. `vite build` failed with
+"Unexpected end of input"; fixed by writing the class list with commas instead of `/`.
+
+**Verified live** (dev server + `node index.js`, real GROQ-backed chat replies, no
+mocks; @mohitesarthak74's own real account and conversations): opening an existing
+conversation end-to-end (real target extracted to a bare handle, real original-verdict
+quote, real severity, real persona engaged/locked cards, real conversation id in the
+session badge), sending a message via a quick-retort chip and watching it stream to a
+real reply with the "delivered & parsed" stamp appearing on the user's message once the
+reply landed, the signed-out gate on both routes (including the background-color bug
+above, before and after the fix), signing back in, and `/history` to confirm its dark
+body is still completely untouched under the shared light header/footer. Mobile
+verified via the same same-origin-iframe technique prior sessions established (a real
+390×844 frame) — header stacks, hero badges wrap, both columns collapse to one, and the
+composer/retort chips/safety-note footer all reflow and remain usable.
+**Not verified**: exact pixel fidelity against the Stitch mockup, real touch behavior on
+an actual device, and the real (non-dev-bypassed) chat rate-limit-reached state — all
+three out of reach in this environment, same caveat every prior redesign session has
+carried.
+
+`npm run build`/`npm run lint`/`npm test` (225/225) all pass. Left uncommitted per the
+task's own instruction — nothing in this session was committed or pushed.
+
+## 2026-09-18 (v5, Home only)
+
+### Stitch redesign: Home rebuilt as "Roaster Studio — Clean Neu-Brutalist"
+Replaced Home's v4 dark "Obsidian" redesign entirely with a second, light design system
+pulled from the same Stitch project ("Roastify Frontend Redesign",
+`projects/7127362638254684669`) — this time the screen named exactly "Roaster Studio —
+Clean Neu-Brutalist" (found alongside five other screens in that project — an
+"Obsidian Edition" of Home, a non-"Clean" "Neu-Brutalist Edition", and Obsidian
+Privacy/History/Chat — all explicitly out of scope). Cream canvas (`#faf8f5`), white
+cards, black hard borders (2.5–3px) and zero-blur offset shadows, lime/lilac/coral
+accents. `src/routes/Roaster.jsx`, `src/components/InputForm.jsx`, and
+`src/components/RoastCard.jsx` were rewritten from scratch against this mockup rather
+than reskinned — none of the old dark-system Home-only CSS or class names survive.
+
+**Scope grew mid-task, by explicit instruction**: the header/footer (`Layout.jsx`,
+shared by every route) were originally going to stay untouched dark v4 chrome; the user
+redirected mid-session to redesign them too, since they'll become the standard once
+Chat/History/Privacy get their own pass later. So `.header`/`.footer` and everything
+under them (nav, auth dropdown, account panel) are now the same cream system, live on
+every route — Chat/History/Privacy bodies are deliberately still dark for now, which
+means those three routes currently show a cream header/footer around a dark body until
+they get redesigned.
+
+**Fabricated mockup content was tried, then walked back to nothing, across several
+follow-up requests** — worth recording as one thread since the end state is simpler than
+the process: the mockup's "Audit Diagnostics" stat tiles and "Key Indictments" list (no
+backend field exists for either — the model only ever returns `{ roast, tips }`) were
+first hardcoded verbatim from the mockup's own demo data (`src/lib/personas.js` grew a
+`studioIndictments` field per persona for the latter), then both were removed outright on
+request in later messages the same session. Neither exists in the final component —
+`RoastCard.jsx`'s completed state now goes straight from the quote card to the real Fixes
+checklist, and `personas.js` only carries `icon`/`tagline`/`verdictBadge`. The verdict
+header's fabricated "#409" id and the word "dossier" were dropped the same way — the
+header now reads plain "Verdict", and the idle state reads "Awaiting target". The target
+chip was also changed to strip a pasted URL down to the bare handle (`sarthzk`, not
+`github.com/sarthzk`) rather than echoing whatever was typed verbatim.
+
+**Other copy/UX changes made via quick follow-up requests, verified individually**:
+severity display labels reverted from the mockup's Mild/Spicy/Nuclear back to the app's
+original Mild/Medium/Destroy Me (values were never touched, always `mild`/`medium`/
+`"destroy me"`); all three persona taglines replaced with new copy the user supplied;
+GitHub's "Load Demo" value changed to `github.com/sarthzk`; the hero title changed from
+"Unfiltered Profile Roast" to "Get Roasted"; the redundant rate-limit line under the
+submit button ("N of N roasts left today" / "saved to your history") removed entirely
+now that the header's quota badge is the one place that shows it; the completed-roast
+meta line trimmed to just `type · severity` (no more "saved to your history"/"not
+saved"); the chat CTA relabeled from "Start Rebuttal Chat" to "Fight Me" (arrow kept);
+footer credit changed from "Made by" to "Developed by"; and the platform picker's
+abstract unicode glyphs (⌘/▣/▤/◎) replaced with small inline-SVG line icons that actually
+read as each platform's mark (GitHub octocat, LinkedIn "in", Instagram camera; Resume
+keeps a plain document icon since it has no real logo) — no image assets or icon font
+added, just stroke-only SVG paths matching the existing black linework.
+
+**CSS strategy**: audited every class the three Home files used against
+Chat/History/Privacy/`ChatLockedPanel.jsx` before touching anything. Genuinely shared
+structural primitives (`.row`/`.row-label`, base `.hero*`, `.studio-card-head/-num/-title`,
+`.idle-body` container, `.error-body/-top/-icon/-msg/-detail`, `.retry`,
+`.invitation-top/-icon/-msg`) were left completely alone — Home no longer references any
+of them, using its own `.rs-*`-prefixed classes instead, so there's no risk to the other
+pages' still-dark bodies. Everything that actually was Home-exclusive (`.studio-grid`,
+`.source-card`, `.persona-featured/-row`, `.severity-cell`, `.link-row`, `.file-*`,
+`.drop*`, `.paste-*`, `.submit*`, `.rate*`, `.out-*`, `.stream-*`, `.roast-body`,
+`.invitation-body/-actions`, `.meta-row`, `.fix-row*`, `.actions-grid`, `.action-btn*`,
+`.rs-rate*`, `.rs-diagnostics*`, `.rs-stat-*`, `.rs-indictment*`, model-grid, etc.) was
+deleted outright as it stopped being used, not left dead — including its mobile
+breakpoint overrides. New page-scoped tokens (`--rs-canvas`, `--rs-lime`, `--rs-lilac`,
+`--rs-coral`, etc.) sit alongside the existing dark tokens in `:root`, additive only.
+
+**A real bug caught live in the browser, not by review**: `.rs-platform-btn:hover`,
+`.rs-persona-card:hover`, and `.rs-severity-btn:hover` (each `:hover:not(:disabled)`,
+specificity 0,3,0) were silently overriding their own `.is-selected` state (specificity
+0,2,0) whenever the mouse sat over an already-selected cell — a selected severity pill or
+persona card would flash back to its unselected look on hover. Caught by actually
+hovering the rendered page (the pill screenshotted white instead of its selected color)
+rather than by reading the CSS; fixed by excluding `:not(.is-selected)` from all three
+hover rules. `.nav-item`/`.auth-user`/`.auth-trigger` already had the equivalent
+`.is-active:hover`/combined-selector handling from the start and weren't affected.
+
+**Verified live** (dev server + `node index.js`, real GROQ-backed roast, no mocks):
+GitHub input end-to-end (real streaming roast, real tips checklist, checkbox toggle,
+Export Card, Share, Try Another, Fight Me → real `/chat/:id` handoff), GitHub
+scrape-not-found error state, LinkedIn's new upload/dropzone/paste UI, Instagram open
+(signed-in) and locked (signed-out, with the inline sign-in prompt) states, sign-out/
+sign-in header flow including the restyled dropdown panels, severity switching with the
+fixed hover behavior, persona switching, dev-only model picker, the new platform icons,
+the target-chip handle extraction, and the header quota badge and active-tab highlight on
+`/history` with the dark body intentionally unchanged beneath it. Mobile verified via the
+same same-origin-iframe technique the 2026-09-15/16 sessions established (a real
+390×844 frame) — header stacks, platform grid drops to 2 columns, studio grid collapses
+to one column with the verdict card correctly falling below the controls card.
+**Not verified**: exact pixel fidelity against the Stitch mockup, and real touch behavior
+on an actual device — both explicitly out of reach in this environment, same caveat every
+prior redesign session has carried.
+
+`npm run build`/`npm run lint`/`npm test` (225/225) all pass after every change in this
+entry, most recently after the icon swap. Left uncommitted per the task's own
+instruction — nothing in this session was committed or pushed.
+
+## 2026-09-16 (v4)
+
+### Stitch redesign: Home, Chat, History, Privacy
+New visual design pulled from Stitch over MCP ("Roastify Frontend Redesign" project,
+`projects/7127362638254684669` — dark neo-brutalist "Savage Satire & Razor Critique"
+system: Space Grotesk headlines, Hanken Grotesk body, JetBrains Mono labels, hard-offset
+"neo-brutalist" shadows, tight 4px corner radius). Frontend presentation only, per the
+task's own explicit scope: `api/`, Supabase, rate limiting, Sentry, and prompts/personas
+were untouched, and every existing hook/handler/state shape in every edited component is
+byte-identical to before — only markup wrappers, class names, and `src/index.css` itself
+changed. `npm run lint`, `npm test` (225/225, zero selector changes needed — none of the
+existing tests touch the DOM, only pure-logic modules), and `npm run build` all pass.
+
+**Source of truth was the actual screen HTML, not the thumbnails.** One of the four Stitch
+screens ("Roaster Studio — Obsidian Privacy & Data") had a stale cached thumbnail that
+visually showed the Home layout instead of the Privacy page — caught by downloading and
+grepping each screen's real HTML export rather than trusting the screenshot alone.
+
+**A lot of the mockup was fabricated and got left out, not faked**, per the task's own
+explicit instruction: Home's hero stats ("142,890 roasts", "99.4% egos bruised"), the
+completed-roast "ATS match score" badge and fake dossier ID, History's entire telemetry
+trio and every per-card metric (Cynic Damage Index, Fork Ratio, Rishta Viability, …) plus
+its per-row snapshot image, Chat's pre-send burn-capacity gauge (the codebase has a
+documented rule that this number never shows before a real one comes back from a send),
+per-message severity scores, and the "42 repos / 318 commits" structured context stats —
+none of these are backed by anything the API actually returns, so none of them were
+built. Bigger than that: Home's Instagram-gated state drew a fictional "upload grid
+screenshots for OCR" alternate input path that doesn't exist anywhere in this app —
+dropped entirely, kept only the real locked/disabled mechanism, restyled. Privacy's
+entire "Data Actions & Live Telemetry" section (an incognito toggle, a "flush buffer"
+button, GDPR JSON/Markdown export, a fake live session-log console) doesn't correspond to
+any real endpoint — dropped. Privacy's specific retention claims were also outright
+wrong versus the real backend (a uniform "120-minute TTL" instead of the real 1h
+GitHub/24h Instagram split plus a separate 30-day Postgres window; "server OCR" for
+resumes instead of the real client-side `pdfjs-dist` extraction; "0 anonymous records"
+instead of the real "inserted with `user_id: null`, just never listed") — `Privacy.jsx`'s
+copy was already accurate before this task and needed no rewrite, only new card-section
+grouping around it.
+
+**Structural changes, not just a reskin**: Home's Roaster page gained a real desktop
+2-column split (`.studio-grid` — Profile Target + Judgment Parameters cards on the left,
+a sticky Roast Deck output on the right, collapsing to one column below 1024px) instead
+of the old single stacked column. `InputForm.jsx`'s source/input rows and
+persona/severity rows got numbered `.01`/`.02` card-header wrappers (pure grouping divs,
+no logic change). History and Chat rows get their Stitch-style `.01`/`.02`/… numbering
+via a CSS counter (`counter-reset`/`counter-increment`, scoped with `:has()` the same way
+the mobile chat shell already was) rather than any change to either route's markup or
+data. Persona cards gained a decorative flavor tag ("OG JUDGE" / "PASS/FAIL" / "BETA
+ENERGY" — `src/lib/personas.js`'s new `tag` field, cosmetic only, no effect on
+resolution). Severity pills get per-tier coloring (mild = amber outline, medium =
+burnt-orange outline, destroy me = solid fill with a subtle pulse) via a value-derived
+modifier class added in `InputForm.jsx`. Privacy's account-delete flow was swapped from
+the app's usual two-click confirm to a "type DELETE MY ACCOUNT to unlock" pattern — a
+presentational variant explicitly approved for this one page; it still calls the exact
+same `deleteAccount()`.
+
+**The old root `zoom` hack is gone.** `#root { zoom: 0.9127 }` (and the `--root-zoom`
+custom property that compensated `--touch-44`/`--touch-48` and every `100dvh` height for
+it) is removed outright — this redesign's type scale and spacing were sized directly
+against the real viewport, so there was nothing left to compensate for. Touch targets are
+literal `44px`/`48px` again.
+
+**Mobile verified for real, not just screenshotted** — `resize_window` still doesn't
+actually resize the rendered viewport in this environment (same known limitation as the
+2026-09-18 chat mobile audit), so verification used the same same-origin `<iframe>`
+technique: a genuine 390×844 frame, inspected via `getComputedStyle()`. Confirmed the
+studio grid collapses to one column, the persona/source grids reflow to 2-up, severity
+pills wrap, and — the trickiest piece — the chat thread's fixed mobile shell still holds:
+`.app-root` computed `overflow: hidden` at height 840, `.footer` computed `display: none`,
+`.chat-transcript` real `scrollHeight` (2352) exceeding `clientHeight` (430) with
+`overflow-y: auto`, composer flush to the viewport bottom. What's genuinely NOT
+verified: exact pixel fidelity against the Stitch mockup (no way to diff against it
+directly), and real-device rendering (only a same-origin iframe stand-in, not an actual
+phone).
+
+**Nothing to delete** — searched the repo for stale design bundles/handoff READMEs (the
+old v2/v3 handoffs CLAUDE.md references are explicitly "not part of this repo"); none
+were checked in, so there was nothing to remove.
+
 ## 2026-09-18
 
 ### Chat UI: wiring the finished backend to a real interface

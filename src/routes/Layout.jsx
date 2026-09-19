@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
-import { deleteAccount } from "../lib/openai";
+import { deleteAccount, getRateLimitStatus } from "../lib/openai";
 import { useDismissiblePanel } from "../lib/useDismissiblePanel";
 
 // Persists across every route (header + footer); everything else — hero, form, output,
@@ -12,11 +12,21 @@ import { useDismissiblePanel } from "../lib/useDismissiblePanel";
 export default function Layout() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
+  // Independent of Roaster.jsx's own rateLimitStatus (which drives Home's Instagram
+  // gating and its own rate line) — this is purely for the header's quota badge, which
+  // needs to show on every route, not just "/". A second /api/rate-limit-status fetch is
+  // simpler and safer than threading Home's state up through this shared component.
+  const [quota, setQuota] = useState(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // Mobile-only: at <=600px the nav and account controls collapse behind a hamburger (see
+  // the 600px block in index.css). Desktop CSS never reads this — the toggle button is
+  // display:none there — so it has no visual effect above that width.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const headerRef = useRef(null);
   const authRef = useRef(null);
   const triggerRef = useRef(null);
   const accountTriggerRef = useRef(null);
@@ -46,6 +56,12 @@ export default function Layout() {
     return () => subscription.subscription.unsubscribe();
   }, []);
 
+  // Refetches on every session change — same reasoning as Roaster.jsx's own copy: the
+  // caller's tier (and so their limit/remaining) depends on it.
+  useEffect(() => {
+    getRateLimitStatus(session?.access_token).then(setQuota).catch(() => {});
+  }, [session]);
+
   // Closes both panels the moment session changes — a session *appearing* covers both
   // the sign-in panel's own provider buttons and the roaster page's separate inline
   // locked-source prompt, which signs in directly without ever opening this panel; a
@@ -65,6 +81,22 @@ export default function Layout() {
       setDeleteError(null);
     }
   }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handlePointerDown(e) {
+      if (headerRef.current && !headerRef.current.contains(e.target)) setMenuOpen(false);
+    }
+    function handleKeyDown(e) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   const closeSignIn = useDismissiblePanel(signInOpen, {
     containerRef: authRef,
@@ -118,28 +150,52 @@ export default function Layout() {
 
   return (
     <div className="app-root">
-      <header className="header">
+      <header ref={headerRef} className={`header${menuOpen ? " is-menu-open" : ""}`}>
         <Link to="/" className="brand">
           <span className="brand-mark" />
           <span className="brand-name">Roastify</span>
         </Link>
 
-        <nav className="nav">
-          <NavLink to="/" end className={navClass}>
-            <span className="nav-item-bar" />
-            roast
+        <nav className="nav" id="header-menu-nav">
+          <NavLink to="/" end className={navClass} onClick={() => setMenuOpen(false)}>
+            Roaster
           </NavLink>
-          <NavLink to="/chat" className={navClass}>
-            <span className="nav-item-bar" />
-            chat
+          <NavLink to="/chat" className={navClass} onClick={() => setMenuOpen(false)}>
+            Chat
           </NavLink>
-          <NavLink to="/history" className={navClass}>
-            <span className="nav-item-bar" />
-            history
+          <NavLink to="/history" className={navClass} onClick={() => setMenuOpen(false)}>
+            History
+          </NavLink>
+          <NavLink to="/privacy" className={navClass} onClick={() => setMenuOpen(false)}>
+            Privacy &amp; Data
           </NavLink>
         </nav>
 
         <div className="hspacer" />
+
+        {/* Real remaining/limit from /api/rate-limit-status — never a hardcoded number.
+            Anonymous callers are keyed by IP, signed-in ones by user id (see
+            api/rate-limit-status.js); "unlimited" is the dev bypass, not a fabricated
+            infinite quota. */}
+        {quota && (
+          <span className={`quota-badge${quota.unlimited ? " is-unlimited" : ""}`}>
+            <span className="quota-badge-dot" />
+            {quota.unlimited ? "QUOTA: UNLIMITED (DEV)" : `QUOTA: ${quota.remaining}/${quota.limit} BURNS LEFT`}
+          </span>
+        )}
+
+        <button
+          type="button"
+          className={`menu-toggle${menuOpen ? " is-open" : ""}`}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="header-menu-nav"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span className="menu-toggle-bar" />
+          <span className="menu-toggle-bar" />
+          <span className="menu-toggle-bar" />
+        </button>
 
         {isSupabaseConfigured ? (
           <div className="auth" ref={authRef}>
@@ -166,7 +222,7 @@ export default function Layout() {
                 className={`auth-trigger${signInOpen ? " is-open" : ""}`}
                 onClick={() => setSignInOpen((open) => !open)}
               >
-                <span>sign in</span>
+                <span>&#128273; sign in</span>
                 <span className={`auth-caret${signInOpen ? " is-open" : ""}`}>&#9662;</span>
               </button>
             )}
@@ -265,11 +321,11 @@ export default function Layout() {
       </header>
 
       <main className="app-main">
-        <Outlet context={{ session, signIn, signOut, openSignIn: () => setSignInOpen(true) }} />
+        <Outlet context={{ session, signIn, signOut, openSignIn: () => { setMenuOpen(true); setSignInOpen(true); } }} />
       </main>
 
       <footer className="footer">
-        <div className="footer-name">Made by Sarthak Mohite</div>
+        <div className="footer-name">Developed by Sarthak Mohite</div>
         <Link to="/privacy" className="footer-link">
           Privacy
         </Link>

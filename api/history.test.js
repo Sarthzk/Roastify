@@ -2,11 +2,13 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 // vi.hoisted is required here (rather than a plain module-scope const) because vi.mock's
 // factory is hoisted above regular imports/declarations.
-const { getAuthenticatedUserMock, getSupabaseClientForUserMock, queryMock, ltMock } = vi.hoisted(() => ({
+const { getAuthenticatedUserMock, getSupabaseClientForUserMock, queryMock, ltMock, eqMock, ilikeMock } = vi.hoisted(() => ({
   getAuthenticatedUserMock: vi.fn(async () => null),
   getSupabaseClientForUserMock: vi.fn(),
   queryMock: vi.fn(),
   ltMock: vi.fn(),
+  eqMock: vi.fn(),
+  ilikeMock: vi.fn(),
 }));
 
 vi.mock("./_lib/auth.js", () => ({
@@ -35,7 +37,14 @@ function makeFakeClient() {
       return builder;
     },
     delete: () => builder,
-    eq: () => builder,
+    eq: (...args) => {
+      eqMock(...args);
+      return builder;
+    },
+    ilike: (...args) => {
+      ilikeMock(...args);
+      return builder;
+    },
     then: (resolve) => resolve(queryMock()),
   };
   return builder;
@@ -76,6 +85,8 @@ describe("GET /api/history", () => {
     getSupabaseClientForUserMock.mockReset();
     queryMock.mockReset();
     ltMock.mockReset();
+    eqMock.mockReset();
+    ilikeMock.mockReset();
   });
 
   it("rejects a request with no Authorization header with SIGN_IN_REQUIRED (401)", async () => {
@@ -115,6 +126,28 @@ describe("GET /api/history", () => {
     expect(getSupabaseClientForUserMock).toHaveBeenCalledWith("real-user-token");
     expect(res.body.roasts).toHaveLength(1);
     expect(res.body.roasts[0]).toMatchObject({ type: "github", identifier: "octocat" });
+  });
+
+  it("applies persona and type filters as exact-match queries", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ data: [], error: null });
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer t", url: "/api/history?persona=recruiter&type=github" }), res);
+
+    expect(eqMock).toHaveBeenCalledWith("persona", "recruiter");
+    expect(eqMock).toHaveBeenCalledWith("type", "github");
+    expect(ilikeMock).not.toHaveBeenCalled();
+  });
+
+  it("searches identifier case-insensitively as a substring, escaping LIKE wildcards", async () => {
+    getAuthenticatedUserMock.mockResolvedValue({ id: "user-1", email: "a@b.com" });
+    queryMock.mockReturnValue({ data: [], error: null });
+    const res = createMockRes();
+
+    await handler(req({ authorization: "Bearer t", url: `/api/history?q=${encodeURIComponent("50%_a\\b")}` }), res);
+
+    expect(ilikeMock).toHaveBeenCalledWith("identifier", "%50\\%\\_a\\\\b%");
   });
 
   it("returns nextCursor null when fewer than a full page comes back", async () => {

@@ -759,9 +759,11 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   Deliberately *not* where roaster-specific state lives — see `Roaster.jsx` below for why. `.brand`
   (the wordmark) is a real `<Link to="/">`, not a `<div>` — a real `href` so middle-click/cmd-click
   work, and no special-casing needed for "inert on `/`" since that's just how `<Link>` already behaves.
-  Nav is three `<NavLink>`s (`roast` / `chat` / `history`, added 2026-09-18 for chat) whose `isActive`
-  styling comes from the current path, not app state — `.nav-item` was already tab-count-agnostic at
-  every breakpoint (including the mobile 3-band header collapse), so adding the third needed no new CSS. Both panels share one mechanism, `src/lib/useDismissiblePanel.js` — a hook taking a
+  Nav is four `<NavLink>`s (`roast` / `chat` / `history` / `privacy`, the last one moved into the
+  header nav in the 2026-09-16 Stitch redesign — previously footer-only, and still also linked from
+  the footer) whose `isActive` styling comes from the current path, not app state — `.nav-item` was
+  already tab-count-agnostic at every breakpoint (including the mobile 3-band header collapse), so
+  adding a fourth needed no new CSS. Both panels share one mechanism, `src/lib/useDismissiblePanel.js` — a hook taking a
   container ref (must wrap both the trigger and the panel, so an outside click is measured against the
   whole unit), a trigger ref, and an `onDismiss` callback, returning a `close()` for the panel's own
   "close" button to call. Internally: outside-click and `Escape` both dismiss (`Escape` additionally
@@ -855,7 +857,7 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
 - `src/routes/History.jsx` (route `/history`) — signed-in only, but the route itself is reachable by
   anyone (a shared `/history` link must never redirect or 404 — see the v3 handoff). Signed out: an
   invitation-marker locked panel with its own two sign-in buttons (`signIn` from the outlet context).
-  Signed in: fetches `getHistory(accessToken)` on mount and on every token change (same
+  Signed in: fetches `getHistory(accessToken, undefined, filters)` on mount and whenever the token or a filter changes — the search box (debounced 350ms) and persona/source pills are real server-side filters (`persona`/`type`/`q` query params in `api/history.js`, `q` an escaped `ilike` on `identifier`), not client-side; each row's "export card" renders the shared `VerdictCard` (also used by `RoastCard.jsx`) off-screen at 520px and downloads it via `exportCardAsImage()` (`src/lib/exportCard.js`) (same
   render-time-adjustment pattern for resetting `loading`/`error` before the fetch, to keep the actual
   data-fetching `useEffect` free of synchronous `setState` calls at its top — see the file's own
   comment) — three states once loaded: a real error (network/auth failure distinct from "signed out"),
@@ -877,17 +879,18 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   nothing to fetch it against yet, so it renders an honest "not shareable yet" invitation row instead
   of the design's sample roast content, plus the same growth-loop CTA (`roast me instead →`, `3 free a
   day · no account needed`) the finished page will keep once real roasts land here.
-- `src/routes/Privacy.jsx` (route `/privacy`, linked from the footer) — the privacy copy, close to
-  verbatim from the source doc. Its "Deleting your data" section points at `/history`'s own per-row
-  delete control for roasts, and hosts account deletion directly: a trigger button that expands into
-  the same confirm-bar pattern as `History.jsx`'s rows (reusing its button classes), calling
-  `deleteAccount()` only past that second click, then signing out and navigating home. Signed-out
+- `src/routes/Privacy.jsx` (route `/privacy`, linked from the footer) — rebuilt 2026-09-19 to the
+  light "Neu-Brutalist Privacy & Data" Stitch screen using the `.rs-*` system: only real claims (the
+  copy regrouped into cards plus an "At a glance" widget; the mockup's invented sandbox/cipher/purge
+  claims, log terminal, incognito/export/cache-purge controls were dropped). "Your controls" links to
+  `/history` for per-roast delete, and the danger zone hosts account deletion behind a type-to-unlock
+  (`DELETE MY ACCOUNT`) input, calling `deleteAccount()` then signing out and navigating home. Signed-out
   visitors get a "Sign in" link wired to the header's existing `openSignIn` (from the outlet context)
   rather than a duplicate provider picker on this page too.
 - `src/lib/personas.js` — unchanged: frontend mirror of `api/_lib/prompts/personas.js`'s registry.
 - `src/lib/openai.js` — `getRoast`/`getRateLimitStatus` unchanged (still take an optional
   `accessToken` that becomes an `Authorization: Bearer` header via the shared `authHeaders()` helper).
-  `getHistory(accessToken, cursor)` against `GET /api/history` — `cursor`, when given, is the
+  `getHistory(accessToken, cursor, filters)` against `GET /api/history` (`filters`: optional `persona`/`type`/`q`) — `cursor`, when given, is the
   previous page's `nextCursor` (an ISO `created_at` timestamp) from `api/history.js`.
   `deleteRoast(accessToken, id)` (`DELETE /api/history?id=`) and `deleteAccount(accessToken)`
   (`DELETE /api/account`) round out the CRUD surface. All four throw the same envelope-derived `Error`
@@ -902,40 +905,59 @@ tier-aware source states, and a `/history` page; the v2 entry below is supersede
   also exports plain functions trips `react-refresh/only-export-components`. `Roaster.jsx`/
   `InputForm.jsx` now import these back in and export only their component.
 
-**Styling.** Same convention as the v2 redesign: plain CSS classes with real `@media` queries, all in
-`src/index.css` (the one global stylesheet — no CSS-in-JS, no second Tailwind config; Tailwind stays
-for small incidental utilities like the visually-hidden-checkbox technique). Class names still follow
-the handoff's own `data-r="x"` → `.x` naming crib. Colors are CSS custom properties in `:root` —
-`--ground` through `--ground-5`, `--accent`/`--accent-dk`/`--accent-lt` (the last one is `a:hover`'s
-color, tokenized 2026-09-15 — was a hardcoded hex before), `--ink`/`--ink-2`/`--ink-3` (`--ink-4` was
-removed 2026-09-15: declared but never actually applied anywhere — the struck-through fix-list text it
-was meant for uses `--ink-3`), `--ink-row-2`/`--ink-row-3` (history row content — deliberately
-brighter than the `--ink-2`/`--ink-3` chrome tier, never used for chrome), `--rule`/`--rule-2`. The
-`--ink*` scale was lifted for readability 2026-09-15 (see `WORK_LOG.md`'s Task 0 entry for the exact
-before/after hex values and WCAG contrast ratios) — same hue/saturation per token, only lightness
-raised, so the muted identity and the relative ordering both held; `--accent`/`--rule*` were
-deliberately left untouched in that pass. `--touch-44`/`--touch-48` (also added 2026-09-15) compensate
-touch-target `min-height`s for `#root`'s `zoom` the same way `--root-zoom` compensates `.app-root`'s
-own height below — a plain `min-height: 44px` inside the zoomed subtree measures ~40px to a real
-finger, confirmed by direct measurement in a genuinely narrow viewport, not assumed. Do **not**
-hardcode a new hex value inline; add or reuse a token instead. The one deliberate exception is
-`RoastCard.jsx`'s `handleSaveAsImage()`, which passes a literal hex (`#0a0a0a`, matching `--ground-2`)
-to `html2canvas`'s `backgroundColor` option — that value becomes a canvas `fillStyle`, which doesn't
-resolve CSS custom properties, so it can't reference a token and must be kept in sync by hand.
-Breakpoints are still 1180 / 900 / 600 / 380px with the same character per level (type-only / columns
-collapse / gutter collapses and the header stacks to three bands / small corrections) — see the v3
-handoff's own README (not part of this repo) for the exact values if tuning further; whether these
-nominal values should themselves be corrected for the zoom-compounding effect below is a decision
-still open in `ROASTIFY_TASKS.md`. The `html, body, #root { zoom: 97% }` rule from the v2/v3 handoffs
-is **not** reproduced as written: applying the same `zoom` declaration to three nested ancestors
-compounds multiplicatively (0.97³ ≈ 91.27%, confirmed by direct measurement — see `WORK_LOG.md`'s
-2026-08-23 entry), so it's consolidated onto `#root` alone at that already-compounded value — same
-visual result, honest CSS. That value is a `--root-zoom` custom property (not a bare literal) because
-the sticky-footer fix above (and the touch-target tokens above) also need to compensate for it.
-Elements the v3 redesign removed outright (and that no longer have CSS or markup
-anywhere in this repo): the hero's "what it reads" side panel, the "how it works" 3-step strip, index
-numbers on source/persona cells, the streaming character counter and its spacer rule, the rate-limit
-tick meter, and the `cmd + enter` hint.
+**Styling (v4, 2026-09-16 Stitch redesign).** Still plain CSS classes with real `@media` queries, all
+in `src/index.css` (the one global stylesheet — no CSS-in-JS, no second Tailwind config; Tailwind
+stays for small incidental utilities like the visually-hidden-checkbox technique) — but the visual
+system itself is new, pulled from Stitch over MCP ("Roastify Frontend Redesign" project,
+`projects/7127362638254684669`: "Savage Satire & Razor Critique," a dark neo-brutalist system) rather
+than the earlier Claude Design v2/v3 handoffs. Class names are unchanged from v3 (`.source-card`,
+`.hist-row-open`, etc. — the redesign is a markup-preserving reskin, not a rename) with a handful of
+new additive ones: `.studio-grid`/`.studio-col-controls`/`.studio-col-output` (Home's desktop 2-column
+split — controls left, a sticky Roast Deck output right, collapsing to one column below 1024px, a
+fifth breakpoint added specifically for this), `.studio-card-head`/`-num`/`-title` (the `.01`/`.02`…
+numbered card-grouping headers reused across `InputForm.jsx` and `Privacy.jsx`), `.persona-cell-tag`
+(the decorative flavor badge — see `src/lib/personas.js`'s `tag` field), `.severity-cell--mild`/
+`--medium`/`--destroy-me` (per-tier selected-state coloring, a value-derived class added in
+`InputForm.jsx`), and `.confirm-type-label`/`.confirm-type-input` (Privacy's "type DELETE MY ACCOUNT
+to unlock" pattern). History/Chat row numbering (the Stitch mockup's `.01`/`.02`… dossier badges) is
+drawn with a CSS counter (`counter-reset`/`counter-increment`, scoped with `:has()` the same way the
+mobile chat shell below already was) rather than any markup change to either route.
+
+Typography is now three families, not one monospace face throughout: `--font-display` (Space Grotesk
+— headlines, the roast/chat message text, error/invitation messages), `--font-body` (Hanken Grotesk —
+the default, body copy), `--font-mono` (JetBrains Mono — every uppercase-tracked label/meta/tag, the
+old app-wide default's actual replacement). Loaded via `<link>` tags in `index.html` (Google Fonts),
+not `@import` in the stylesheet. Colors are CSS custom properties in `:root`, renamed in value (not
+name) from v3 where a direct token existed: `--ground` through `--ground-5` (now `#09090b`
+"Canvas Deep" through `#1c1c22`), `--accent`/`--accent-dk`/`--accent-lt` (now `#ff3e1d` "Electric
+Chili" and its shades — was amber `#e2b714` through v3), two new accent scales (`--accent-2`/
+`--accent-2-dk`, `#d4ff00` "Toxic Lime," for constructive/affirmative states — saved, checked, success
+— and `--accent-3`, `#ffb020` "Cyber Amber," for caution/medium-severity), `--ink`/`--ink-2`/`--ink-3`,
+`--ink-row-2`/`--ink-row-3` (unchanged role, new hex), `--rule`/`--rule-2` plus a new `--rule-3`
+(borders on floating interactive modules — sign-in/account panels). Two new tokens: `--radius`
+(`4px`, the design system's "tight neo-brutalist corner" — cards/buttons/inputs) and `--shadow-hard`/
+`--shadow-hard-2` (the zero-blur 4px offset "neo-brutalist snap," chili or lime, used sparingly on
+selected source/persona cards and a couple of primary CTAs). Do **not** hardcode a new hex value
+inline; add or reuse a token instead. The one deliberate exception is `RoastCard.jsx`'s
+`handleSaveAsImage()`, which passes a literal hex (`#0a0a0a`, close to but not touched to match
+`--ground-2`'s new `#121217` — html2canvas's `backgroundColor` is a canvas `fillStyle`, which can't
+resolve a CSS custom property) and must be kept in sync by hand if `--ground-2` changes again.
+
+**The `#root { zoom }` hack is gone entirely as of v4** — not adjusted, removed. `--root-zoom` (and
+its compensation of `--touch-44`/`--touch-48` and every `100dvh` height) no longer exists anywhere in
+this stylesheet; this redesign's type scale and spacing were sized directly against the real viewport,
+so there's nothing to compensate for. `--touch-44`/`--touch-48` are literal `44px`/`48px` again. This
+also retires the open "zoom/breakpoint compounding" decision `ROASTIFY_TASKS.md` used to carry (the
+91.3%-vs-97% question) — moot once there's no zoom at all.
+
+Breakpoints are 1180 (type only) / **1024 (new — the studio grid collapses)** / 900 (columns collapse)
+/ 600 (gutter collapses; the header collapses to logo + quota + a hamburger whose panel holds the nav and account controls — `Layout.jsx`'s `menuOpen`, same DOM as desktop just hidden until open; the wordmark also hides at <=420px) / 380 (small corrections). Elements the v3
+redesign removed outright, and that v4 didn't bring back (no CSS or markup for any of them anywhere in
+this repo): the hero's "what it reads" side panel, the "how it works" 3-step strip, the streaming
+character counter and its spacer rule, the rate-limit tick meter, and the `cmd + enter` hint. Index
+numbers on source/persona cells — removed in v3 — are effectively back in v4, but as flavor tags
+(`.source-card-tag`/`.persona-cell-tag`) and the CSS-counter row numbering above, not the old literal
+index markup.
 
 ### Deployment
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining
