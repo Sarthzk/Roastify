@@ -84,13 +84,11 @@ async function handleStart(req, res, user, client) {
 // Each row needs two things the conversations table alone doesn't carry: the roast's
 // `type` (for the "persona · source" kicker the chat list shows) and the conversation's
 // most recent message (for the row's primary line, with a "you:" prefix when it's the
-// caller's own). Both are fetched as separate follow-up queries, awaited sequentially —
-// same style every other query in this file already uses — rather than one nested query
-// (an embedded per-relation order+limit is real PostgREST/supabase-js functionality, but
-// there's no live project here to verify the nested syntax against) or Promise.all (a
-// full page tops out at 25 conversations, each a single indexed lookup on
-// messages_conversation_id_idx, so sequential awaits stay fast without the extra
-// complexity of parallel error-handling).
+// caller's own). Both are fetched as separate follow-up queries (the roasts lookup and the
+// per-conversation last-message lookups, all in parallel — each a single indexed lookup on
+// messages_conversation_id_idx) rather than one nested query: an embedded per-relation
+// order+limit is real PostgREST/supabase-js functionality, but it hasn't been verified
+// against this project.
 async function handleList(req, res, client) {
   let query = client
     .from("conversations")
@@ -117,50 +115,44 @@ async function handleList(req, res, client) {
   }
 
   const roastIds = [...new Set(conversations.map((c) => c.roast_id).filter(Boolean))];
-  let typeByRoastId = new Map();
 
-  if (roastIds.length > 0) {
-    const { data: roasts, error: roastsError } = await client.from("roasts").select("id, type").in("id", roastIds);
+  // The roasts lookup and one last-message lookup per conversation don't depend on each
+  // other, so they all go out at once — awaiting them one by one made this endpoint's
+  // latency grow by a full database round trip per row (~1.5s for 12 conversations).
+  const [roastsResult, ...lastMessageResults] = await Promise.all([
+    roastIds.length > 0 ? client.from("roasts").select("id, type").in("id", roastIds) : { data: [], error: null },
+    ...conversations.map((c) =>
+      client
+        .from("messages")
+        .select("role, content, created_at")
+        .eq("conversation_id", c.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+    ),
+  ]);
 
-    if (roastsError) {
-      const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load your conversations.", {
-        status: 500,
-        cause: roastsError,
-      });
-      logDbFailure(err, roastsError);
-      return res.status(err.status).json(toErrorEnvelope(err));
-    }
-
-    typeByRoastId = new Map(roasts.map((r) => [r.id, r.type]));
+  const failed = [roastsResult, ...lastMessageResults].find((r) => r.error);
+  if (failed) {
+    const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load your conversations.", {
+      status: 500,
+      cause: failed.error,
+    });
+    logDbFailure(err, failed.error);
+    return res.status(err.status).json(toErrorEnvelope(err));
   }
 
-  const rows = [];
-  for (const c of conversations) {
-    const { data: lastMessages, error: lastMessageError } = await client
-      .from("messages")
-      .select("role, content, created_at")
-      .eq("conversation_id", c.id)
-      .order("created_at", { ascending: false })
-      .limit(1);
+  const typeByRoastId = new Map(roastsResult.data.map((r) => [r.id, r.type]));
 
-    if (lastMessageError) {
-      const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load your conversations.", {
-        status: 500,
-        cause: lastMessageError,
-      });
-      logDbFailure(err, lastMessageError);
-      return res.status(err.status).json(toErrorEnvelope(err));
-    }
-
-    const lastMessage = lastMessages[0];
-    rows.push({
+  const rows = conversations.map((c, i) => {
+    const lastMessage = lastMessageResults[i].data[0];
+    return {
       ...toConversationPayload(c),
       type: typeByRoastId.get(c.roast_id) ?? null,
       lastMessage: lastMessage
         ? { role: lastMessage.role, content: lastMessage.content, createdAt: lastMessage.created_at }
         : null,
-    });
-  }
+    };
+  });
 
   res.json({
     conversations: rows,
@@ -200,11 +192,25 @@ async function handleGet(req, res, client) {
     return res.status(err.status).json(toErrorEnvelope(err));
   }
 
-  const { data: messages, error: messagesError } = await client
-    .from("messages")
-    .select("id, role, content, created_at")
-    .eq("conversation_id", id)
-    .order("created_at", { ascending: true });
+  // The messages and the roast don't depend on each other (only on the conversation row
+  // above), so they're fetched together rather than back to back. roast_id is nullable for
+  // a future debate-mode conversation with no roast attached (see the migration) — not
+  // reachable today (every conversation is created from a roastId, see handleStart
+  // above), but guarded rather than assumed.
+  const [{ data: messages, error: messagesError }, { data: roastRow, error: roastError }] = await Promise.all([
+    client
+      .from("messages")
+      .select("id, role, content, created_at")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true }),
+    conversation.roast_id
+      ? client
+          .from("roasts")
+          .select("type, identifier, severity, roast, tips")
+          .eq("id", conversation.roast_id)
+          .maybeSingle()
+      : { data: null, error: null },
+  ]);
 
   if (messagesError) {
     const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load this conversation's messages.", {
@@ -215,36 +221,24 @@ async function handleGet(req, res, client) {
     return res.status(err.status).json(toErrorEnvelope(err));
   }
 
-  // roast_id is nullable for a future debate-mode conversation with no roast attached
-  // (see the migration) — not reachable today (every conversation is created from a
-  // roastId, see handleStart above), but guarded rather than assumed.
-  let roast = null;
-  if (conversation.roast_id) {
-    const { data: roastRow, error: roastError } = await client
-      .from("roasts")
-      .select("type, identifier, severity, roast, tips")
-      .eq("id", conversation.roast_id)
-      .maybeSingle();
+  if (roastError) {
+    const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load the roast behind this conversation.", {
+      status: 500,
+      cause: roastError,
+    });
+    logDbFailure(err, roastError);
+    return res.status(err.status).json(toErrorEnvelope(err));
+  }
 
-    if (roastError) {
-      const err = new RoastError(ERROR_CODES.INTERNAL_ERROR, "Failed to load the roast behind this conversation.", {
-        status: 500,
-        cause: roastError,
-      });
-      logDbFailure(err, roastError);
-      return res.status(err.status).json(toErrorEnvelope(err));
-    }
-
-    if (roastRow) {
-      roast = {
+  const roast = roastRow
+    ? {
         type: roastRow.type,
         identifier: roastRow.identifier,
         severity: roastRow.severity,
         roast: roastRow.roast,
         tips: roastRow.tips,
-      };
-    }
-  }
+      }
+    : null;
 
   res.json({
     ...toConversationPayload(conversation),

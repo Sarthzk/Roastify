@@ -42,50 +42,47 @@ vi.mock("./_lib/auth.js", () => ({
 // terminal call resolves via `.then`, dispatched by table plus which operation was called
 // (`.delete()` vs. a plain select, and — for "messages" — whether `.limit(1)` was applied,
 // which is how handleList's per-conversation last-message lookup differs from
-// handleGet's full-thread fetch). This only works because every query in api/conversations.js
-// is awaited sequentially, never in parallel (see handleList's own comment on why) — a
-// single mutable `builder` shared across concurrent chains would race. Records which token
-// built the client so tests can assert every query runs as the caller (RLS-backed), never
-// via any admin/service-role client.
+// handleGet's full-thread fetch). Like the real client, every `.from()` returns a fresh
+// builder with its own state, because handleList/handleGet issue some queries concurrently.
+// Records which token built the client so tests can assert every query runs as the caller
+// (RLS-backed), never via any admin/service-role client.
 function makeUserClient() {
-  const builder = {
-    _table: null,
-    _op: "select",
-    _limit: null,
+  return {
     from(table) {
-      builder._table = table;
-      builder._op = "select";
-      builder._limit = null;
+      const builder = {
+        _table: table,
+        _op: "select",
+        _limit: null,
+        select: () => builder,
+        eq: () => builder,
+        order: () => builder,
+        in: () => builder,
+        lt: () => builder,
+        limit: (n) => {
+          builder._limit = n;
+          return builder;
+        },
+        delete: () => {
+          builder._op = "delete";
+          return builder;
+        },
+        maybeSingle: () => {
+          if (builder._table === "roasts") return roastSelectMock();
+          if (builder._table === "conversations") return conversationSelectMock();
+          throw new Error(`unexpected maybeSingle() on table "${builder._table}"`);
+        },
+        then: (resolve) => {
+          if (builder._table === "conversations" && builder._op === "delete") return resolve(conversationDeleteMock());
+          if (builder._table === "conversations" && builder._op === "select") return resolve(conversationListMock());
+          if (builder._table === "roasts") return resolve(roastsBulkMock());
+          if (builder._table === "messages" && builder._limit === 1) return resolve(lastMessageMock());
+          if (builder._table === "messages") return resolve(messagesSelectMock());
+          throw new Error(`unexpected await on table "${builder._table}" op "${builder._op}"`);
+        },
+      };
       return builder;
-    },
-    select: () => builder,
-    eq: () => builder,
-    order: () => builder,
-    in: () => builder,
-    lt: () => builder,
-    limit: (n) => {
-      builder._limit = n;
-      return builder;
-    },
-    delete: () => {
-      builder._op = "delete";
-      return builder;
-    },
-    maybeSingle: () => {
-      if (builder._table === "roasts") return roastSelectMock();
-      if (builder._table === "conversations") return conversationSelectMock();
-      throw new Error(`unexpected maybeSingle() on table "${builder._table}"`);
-    },
-    then: (resolve) => {
-      if (builder._table === "conversations" && builder._op === "delete") return resolve(conversationDeleteMock());
-      if (builder._table === "conversations" && builder._op === "select") return resolve(conversationListMock());
-      if (builder._table === "roasts") return resolve(roastsBulkMock());
-      if (builder._table === "messages" && builder._limit === 1) return resolve(lastMessageMock());
-      if (builder._table === "messages") return resolve(messagesSelectMock());
-      throw new Error(`unexpected await on table "${builder._table}" op "${builder._op}"`);
     },
   };
-  return builder;
 }
 vi.mock("./_lib/supabaseUser.js", () => ({
   getSupabaseClientForUser: (token) => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
 import { deleteAccount, getRateLimitStatus } from "../lib/openai";
@@ -12,6 +12,11 @@ import { useDismissiblePanel } from "../lib/useDismissiblePanel";
 export default function Layout() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
+  // False until supabase.auth.getSession() has answered (immediately true when Supabase
+  // isn't configured) — the first render always has session === null even for someone
+  // who is signed in, so anything keyed to it must wait for this before treating null as
+  // "anonymous".
+  const [sessionResolved, setSessionResolved] = useState(!supabase);
   // Independent of Roaster.jsx's own rateLimitStatus (which drives Home's Instagram
   // gating and its own rate line) — this is purely for the header's quota badge, which
   // needs to show on every route, not just "/". A second /api/rate-limit-status fetch is
@@ -55,7 +60,10 @@ export default function Layout() {
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setSessionResolved(true);
+    });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
     });
@@ -65,8 +73,9 @@ export default function Layout() {
   // Refetches on every session change — same reasoning as Roaster.jsx's own copy: the
   // caller's tier (and so their limit/remaining) depends on it.
   useEffect(() => {
+    if (!sessionResolved) return;
     getRateLimitStatus(session?.access_token).then(setQuota).catch(() => {});
-  }, [session]);
+  }, [session, sessionResolved]);
 
   // Closes both panels the moment session changes — a session *appearing* covers both
   // the sign-in panel's own provider buttons and the roaster page's separate inline
@@ -327,7 +336,9 @@ export default function Layout() {
       </header>
 
       <main className="app-main">
-        <Outlet context={{ session, signIn, signOut, updateQuota, openSignIn: () => { setMenuOpen(true); setSignInOpen(true); } }} />
+        <Suspense fallback={null}>
+          <Outlet context={{ session, signIn, signOut, updateQuota, openSignIn: () => { setMenuOpen(true); setSignInOpen(true); } }} />
+        </Suspense>
       </main>
 
       <footer className="footer">

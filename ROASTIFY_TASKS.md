@@ -35,6 +35,7 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
 ### Small open item
 - [x] ~~**Privacy still shows a dark v4 chrome body under the light header/footer.**~~ Done 2026-09-19 — Privacy rebuilt to the light Neu-Brutalist system (see WORK_LOG.md v8).
 - [x] ~~**History's search/persona/source filters are client-side only.**~~ Done 2026-09-19 — real server-side filters in `api/history.js`.
+- [x] **Chat/History slow loads** — N+1 in `/api/conversations` list parallelized (1.5s -> ~0.4s), `/chat/:id` queries parallelized, routes code-split (first `/history` visit ~1.33MB -> ~0.45MB JS), quota fetch waits for the session. Done 2026-09-19. Open (optional): lazy-load `pdfjs-dist` inside `InputForm` (Home still 415KB chunk), composite index migration, cap on `/chat/:id` messages, `@sentry/node` cold-start cost.
 - [x] **Vercel Hobby 12-function cap** — deploy failed because colocated `api/**/*.test.js` counted as functions (14 files). `.vercelignore` now excludes them (7 real functions). Done 2026-09-19; confirm on the next deploy.
 - [x] **Mobile header** (<=600px) collapses to logo + quota + hamburger, nav/account in a slide-down panel. Done 2026-09-19 (real-device touch not verified).
 - **Chat's "Audit Diagnostics"-equivalent metrics were dropped outright, not

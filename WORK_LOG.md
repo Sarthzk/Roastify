@@ -6,6 +6,41 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-19 (v10, Chat/History load-time fixes)
+
+Diagnosed first (measured from the browser against the real Supabase project; ~100ms per
+round trip from this machine): `GET /api/conversations` took **1,571ms for 12
+conversations** because `handleList` awaited one last-message query per conversation in a
+loop (N+1, grows ~110ms/row up to 25 rows); `GET /api/conversations?id=` took ~427ms as
+three sequential queries; `/api/history` is one query but ~41KB/page; every API call also
+pays ~110ms for the JWT verification round trip (kept — it's the security check). Frontend:
+one 1,327KB (374KB gzip) JS chunk held every route, ~48% of it `pdfjs-dist` (435KB) +
+`html2canvas` (199KB); the 1.23MB `pdf.worker` was *not* being fetched on Chat/History.
+No `select *`, indexes exist, lists are paginated at 25. Function consolidation never
+happened (only `.vercelignore`), so no function bloat from that; note every function pulls
+`@sentry/node` (5.2MB) via `sentry.js` — a cold-start cost, left alone (Sentry out of scope).
+
+Fixed (A/B/C/F): (A) `handleList` runs the roasts lookup + all last-message lookups in one
+`Promise.all` — 1,571ms -> ~330-450ms warm (first call after idle ~1s), flat in row count;
+(B) `handleGet` fetches messages + roast in parallel after the conversation row — ~427 ->
+~322ms; (C) all routes `React.lazy` + `<Suspense>` in `Layout`, `html2canvas` dynamic-imported
+in `exportCard.js` — the JS a first visit to `/history` downloads went from 1,327KB to
+~447KB index + ~15KB route chunks (gzip ~374KB -> ~135KB); Home's own chunk (415KB) still
+carries pdfjs-dist; (F) `Layout` waits for `getSession()` before the first
+`/api/rate-limit-status` call: one request instead of two/three, and no anonymous-quota flash.
+Test fix: `conversations.test.js`'s fake query builder now returns a fresh builder per
+`.from()` (the old shared builder only worked because queries were sequential).
+
+Not done / for Sarthak: no migration written (composite `(user_id, created_at desc)` indexes
+on `roasts`/`conversations` and `(conversation_id, created_at desc)` on `messages` would help
+marginally but aren't measurable at this data size); `/chat/:id` still returns every message
+uncapped; lazy-loading `pdfjs-dist` inside `InputForm.jsx` (fix D) and trimming `tips` in
+`/api/history` (E) were not approved. **Unverified**: real-network/Vercel timings and cold
+starts (all numbers are local browser -> local API -> remote Supabase), and the first-visit
+route-chunk flash on a slow connection (Suspense fallback is empty).
+
+---
+
 ## 2026-09-19 (v9, Vercel function-count fix)
 
 Deploys were failing with "No more than 12 Serverless Functions … on the Hobby plan."

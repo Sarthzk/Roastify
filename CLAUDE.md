@@ -631,13 +631,14 @@ matching how `api/history.js` already dispatches `GET`/`DELETE` off one file rat
 second route. Paginated 25 at a time via a `cursor` (identical convention to `api/history.js`), newest
 first. Each row needs two things the `conversations` table alone doesn't carry — the roast's `type`
 (the list's "persona · source" kicker) and the conversation's most recent message (its primary line,
-"you: " prefixed when it's the caller's own) — fetched as follow-up queries **awaited sequentially**,
-deliberately not `Promise.all`'d: every query in this file already shares one mutable-per-request
-`client` object one call at a time, and a full page tops out at 25 conversations each hitting
-`messages_conversation_id_idx` (a single indexed row), so parallelizing wasn't worth the added
-error-handling complexity for a personal list page that's never a hot path. `handleGet()` (the `?id=`
+"you: " prefixed when it's the caller's own) — fetched as follow-up queries, the roasts
+lookup plus one indexed last-message lookup per conversation, **all in one `Promise.all`** (they don't
+depend on each other; this was sequential until 2026-09-19, when measurement showed it cost a full
+Supabase round trip per row — ~1.5s for 12 conversations, now ~0.4s and flat in row count; the
+`api/conversations.test.js` fake returns a fresh builder per `.from()` so concurrent chains don't share
+state, like the real client). `handleGet()` (the `?id=`
 path) also gained a second query it didn't have before: the roast's own `{ type, identifier, severity,
-roast, tips }`, since the chat surface has to keep that roast "visible or easily recallable" and there
+roast, tips }` (fetched in parallel with the messages, not after them), since the chat surface has to keep that roast "visible or easily recallable" and there
 was no other endpoint the frontend could reasonably re-fetch it from. Both extensions stayed inside
 `api/conversations.js` rather than spawning new files — they're pure additions to what this file
 already reads, not new wiring into persona-locking, message-posting, or rate limiting, which is what
@@ -743,6 +744,7 @@ Redesigned 2026-08-21 (v2) and again 2026-09-13 (v3) from Claude Design handoffs
 tier-aware source states, and a `/history` page; the v2 entry below is superseded except where noted.
 **Component boundaries match the design's own file-mapping table**, not an ad-hoc split:
 
+- **Route-level code splitting (2026-09-19):** every route component in `src/App.jsx` is `React.lazy`, with the `<Suspense fallback={null}>` boundary inside `Layout.jsx` around `<Outlet>` (Layout stays eager — header/footer must always render). `/history` and `/chat` therefore no longer download Home's chunk, which carries `pdfjs-dist`; `html2canvas` is a dynamic import inside `src/lib/exportCard.js`, fetched only on an "export card" click. `Layout.jsx` also waits for `supabase.auth.getSession()` (`sessionResolved`) before its first `/api/rate-limit-status` call, so a signed-in user never triggers a wasted anonymous request or briefly sees the anonymous quota.
 - `src/main.jsx` wraps `<App>` in a `<BrowserRouter>`. `src/App.jsx` is now just the route table —
   six routes (`/`, `/chat`, `/chat/:id`, `/history`, `/r/:slug`, `/privacy`), all nested under one
   `<Route element={<Layout />}>` so they share one header/footer shell with no other nested layouts.

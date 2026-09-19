@@ -1,11 +1,16 @@
+import { lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 import Layout from "./routes/Layout";
-import Roaster from "./routes/Roaster";
-import ChatList from "./routes/ChatList";
-import ChatThread from "./routes/ChatThread";
-import History from "./routes/History";
-import SharedRoast from "./routes/SharedRoast";
-import Privacy from "./routes/Privacy";
+
+// Each route is its own chunk so a visit to /history or /chat doesn't download Home's
+// code (which drags in pdfjs-dist for the PDF upload UI). Layout stays eager — it's the
+// header/footer around every route — and renders the <Suspense> boundary for these.
+const Roaster = lazy(() => import("./routes/Roaster"));
+const ChatList = lazy(() => import("./routes/ChatList"));
+const ChatThread = lazy(() => import("./routes/ChatThread"));
+const History = lazy(() => import("./routes/History"));
+const SharedRoast = lazy(() => import("./routes/SharedRoast"));
+const Privacy = lazy(() => import("./routes/Privacy"));
 
 // No nested layouts beyond the one shared header/footer shell — see src/routes/Layout.jsx
 // and CLAUDE.md's "Frontend structure" for the page-ownership split (session state in
