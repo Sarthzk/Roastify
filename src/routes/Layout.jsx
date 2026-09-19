@@ -17,6 +17,12 @@ export default function Layout() {
   // needs to show on every route, not just "/". A second /api/rate-limit-status fetch is
   // simpler and safer than threading Home's state up through this shared component.
   const [quota, setQuota] = useState(null);
+  // Merges a roast response's own { limit, remaining, reset } into the badge so it updates
+  // the moment a roast finishes, instead of only on the next page load / session change.
+  // Merge (not replace) so `unlimited` and any other field from the initial fetch survive.
+  function updateQuota(rateLimit) {
+    setQuota((prev) => (prev ? { ...prev, ...rateLimit } : prev));
+  }
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   // Mobile-only: at <=600px the nav and account controls collapse behind a hamburger (see
@@ -321,7 +327,7 @@ export default function Layout() {
       </header>
 
       <main className="app-main">
-        <Outlet context={{ session, signIn, signOut, openSignIn: () => { setMenuOpen(true); setSignInOpen(true); } }} />
+        <Outlet context={{ session, signIn, signOut, updateQuota, openSignIn: () => { setMenuOpen(true); setSignInOpen(true); } }} />
       </main>
 
       <footer className="footer">

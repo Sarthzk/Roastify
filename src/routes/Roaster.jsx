@@ -7,7 +7,7 @@ import { DEFAULT_PERSONA } from "../lib/personas";
 import { describeError } from "../lib/roasterErrors";
 
 export default function Roaster() {
-  const { session, signIn } = useOutletContext();
+  const { session, signIn, updateQuota } = useOutletContext();
   const navigate = useNavigate();
 
   const [url, setUrl] = useState("");
@@ -127,12 +127,18 @@ export default function Roaster() {
       // Merge, don't replace — data.rateLimit only ever carries limit/remaining/reset,
       // never instagramEnabled (that's only in the page-load /api/rate-limit-status
       // response), so a plain replace would silently un-hide a disabled Instagram card.
-      if (data.rateLimit) setRateLimitStatus((prev) => ({ ...prev, ...data.rateLimit }));
+      if (data.rateLimit) {
+        setRateLimitStatus((prev) => ({ ...prev, ...data.rateLimit }));
+        updateQuota(data.rateLimit);
+      }
     } catch (err) {
       // No canned roast on failure anymore (see api/roast.js) — show the real message.
       setResult(null);
       setError(describeError(err, { type }));
-      if (err.rateLimit) setRateLimitStatus((prev) => ({ ...prev, ...err.rateLimit }));
+      if (err.rateLimit) {
+        setRateLimitStatus((prev) => ({ ...prev, ...err.rateLimit }));
+        updateQuota(err.rateLimit);
+      }
     } finally {
       setLoading(false);
     }
