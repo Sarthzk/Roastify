@@ -6,6 +6,21 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-19 (v9, Vercel function-count fix)
+
+Deploys were failing with "No more than 12 Serverless Functions … on the Hobby plan."
+Only 7 files in `api/` are real handlers (`roast`, `rate-limit-status`, `history`,
+`account`, `conversations`, `messages`, `cron/purge-expired-profile-data`), but Vercel
+counts every non-underscore file under `api/` — including the 7 colocated `*.test.js`
+files — so the count was 14. It crossed 12 when the cron endpoint and its test landed
+(commit 523a524). Fix: a `.vercelignore` with `api/**/*.test.js`, so tests never ship;
+deployable functions are 7, no handler/URL/frontend change. Local build and all 227 tests
+pass; **not verifiable locally**: that Vercel's Git-integration build honors
+`.vercelignore` and reports 7 functions — confirm on the next deploy. If it doesn't, the
+fallback is moving tests under `api/_lib/` or merging handlers into catch-all files.
+
+---
+
 ## 2026-09-19 (v8, mobile header + Privacy redesign + History follow-ups)
 
 ### Mobile header collapses behind a hamburger (`Layout.jsx`, `index.css`)

@@ -1,0 +1,4 @@
+# Colocated vitest files under api/ would otherwise each be deployed as a serverless
+# function (Vercel treats every non-underscore file in api/ as one) and blow the Hobby
+# plan's 12-function cap. Tests never need to ship.
+api/**/*.test.js

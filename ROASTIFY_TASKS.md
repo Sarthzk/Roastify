@@ -35,6 +35,7 @@ expand a section only if you need the detail behind a decision. Run `npm run lin
 ### Small open item
 - [x] ~~**Privacy still shows a dark v4 chrome body under the light header/footer.**~~ Done 2026-09-19 — Privacy rebuilt to the light Neu-Brutalist system (see WORK_LOG.md v8).
 - [x] ~~**History's search/persona/source filters are client-side only.**~~ Done 2026-09-19 — real server-side filters in `api/history.js`.
+- [x] **Vercel Hobby 12-function cap** — deploy failed because colocated `api/**/*.test.js` counted as functions (14 files). `.vercelignore` now excludes them (7 real functions). Done 2026-09-19; confirm on the next deploy.
 - [x] **Mobile header** (<=600px) collapses to logo + quota + hamburger, nav/account in a slide-down panel. Done 2026-09-19 (real-device touch not verified).
 - **Chat's "Audit Diagnostics"-equivalent metrics were dropped outright, not
   hardcoded.** The Chat redesign (2026-09-18) flagged and left out several mockup stats

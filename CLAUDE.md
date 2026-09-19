@@ -960,6 +960,8 @@ numbers on source/persona cells — removed in v3 — are effectively back in v4
 index markup.
 
 ### Deployment
+Vercel Hobby caps a deployment at 12 serverless functions and counts every non-underscore file under `api/` — including colocated `*.test.js` files — so `.vercelignore` excludes `api/**/*.test.js` (7 real functions: roast, rate-limit-status, history, account, conversations, messages, cron purge). Don't remove it, and put shared non-endpoint code under `api/_lib/`.
+
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining
 Apify-scraped type; `linkedin` no longer scrapes) plus the LLM call (Groq in production; see "Model
 selection" above) has to fit inside that window, which is why the Apify poll budget is kept short.
