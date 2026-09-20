@@ -6,6 +6,45 @@ actually done, when, and why. Updated after each work session.
 
 ---
 
+## 2026-09-21 (v11, real-network perf fix: region + local JWT verification)
+
+The 2026-09-19 entry below measured JWT verification at ~110ms and left it alone ("kept —
+it's the security check") — but that was local browser -> local API -> remote Supabase, which
+never exercises the Vercel edge -> function hop. Measured against **production** this time
+(`roastify-two.vercel.app`, via `performance.getEntriesByType('resource')` on the real
+session, then repeated with `Promise.all` against both endpoints directly to rule out
+client-side serialization): `/api/rate-limit-status` and `/api/history` each took
+**700ms-2s**, warm, every time — not a cold-start artifact. Two causes, both confirmed:
+
+1. `x-vercel-id` on every response read `bom1::iad1::...` — edge hit in Mumbai, function ran
+   in `iad1` (US East/Virginia); `vercel.json` pinned no region, so Vercel defaulted there.
+   Supabase's dashboard confirms the project's own Postgres is in `ap-southeast-1`
+   (Singapore) — the function was running on the opposite side of the planet from its own
+   database.
+2. `getAuthenticatedUser()` (`api/_lib/auth.js`) called `supabase.auth.getUser(token)` — a
+   real network round trip to Supabase's Auth service — on *every* protected request
+   (`history`, `conversations`, `messages`, `account`, `rate-limit-status`, `roast`), before
+   the handler's own DB query even started.
+
+Fixed: (1) `vercel.json` now sets `"regions": ["sin1"]` (Singapore), matching Supabase.
+(2) `getAuthenticatedUser()` verifies the JWT's signature locally against Supabase's public
+JWKS (`jose`'s `jwtVerify` + `createRemoteJWKSet`, checking `iss`/`aud`) instead of calling
+`auth.getUser()` — this project's tokens are ES256 (asymmetric signing keys), confirmed by
+decoding a real token and cross-checking its `kid` against the project's published JWKS,
+so verification needed the public JWKS rather than the legacy shared secret. The JWKS is
+cached at module scope, so a warm invocation pays no network cost for verification at all.
+Accepted trade-off (explicitly approved by Sarthak): a server-side-revoked token now keeps
+verifying until its own short expiry instead of failing instantly, since every RLS-protected
+query it's then used for still goes through Supabase's own gateway, which validates the same
+JWT again independently.
+
+Not done: didn't touch the `conversations.js` `handleList` N-queries-in-parallel pattern
+(already parallelized 09-19; still issues up to 26 concurrent round trips for a full page —
+lower priority now that the per-call latency floor is gone) or add client-side
+caching/stale-while-revalidate for repeat `/history` and `/chat` visits. **Unverified**:
+real-world timing after the region pin actually deploys (region change requires a redeploy
+to take effect; not yet pushed/observed live at time of writing).
+
 ## 2026-09-19 (v10, Chat/History load-time fixes)
 
 Diagnosed first (measured from the browser against the real Supabase project; ~100ms per

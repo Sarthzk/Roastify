@@ -371,10 +371,25 @@ Every piece here degrades to "everyone is anonymous" when Supabase env vars are 
   everything else, or the original static "no login" tag when Supabase isn't configured
   at all.
 - **Server-side verification** (`api/_lib/auth.js`): `getAuthenticatedUser(req)` reads
-  the `Authorization: Bearer <jwt>` header and calls `supabaseAdmin.auth.getUser(token)`
-  — validated against Supabase Auth itself, never decoded/trusted locally. Returns
-  `{ id, email }` or `null` (never a client-sent id) for a missing header, invalid/
-  expired token, or unconfigured Supabase. `getRoast()`/`getRateLimitStatus()`/
+  the `Authorization: Bearer <jwt>` header and verifies its signature locally against
+  Supabase's published JWKS (`jose`'s `jwtVerify`/`createRemoteJWKSet`, checking `iss`/
+  `aud` too) rather than calling `supabase.auth.getUser(token)` — that call is a real
+  network round trip to Supabase Auth on *every* protected request, measured in
+  production at 700ms–2s each (see the 2026-09-21 perf entry in `WORK_LOG.md`), and this
+  project's tokens are ES256 (Supabase's asymmetric signing keys), not the legacy shared
+  secret, so verification needs the public JWKS rather than an HMAC secret.
+  `createRemoteJWKSet` caches the fetched keys at module scope, so a warm invocation pays
+  no network cost at all; only a cold start (or an unrecognized `kid` after key rotation)
+  re-fetches. **Deliberate trade-off**: a token revoked server-side (sign-out-everywhere,
+  account ban) now keeps verifying successfully here until its own short expiry, instead
+  of failing instantly — accepted because Supabase access tokens are short-lived, and
+  every RLS-protected read/write this derived user id is used for still goes through
+  Supabase's own PostgREST gateway, which validates the same JWT again server-side; the
+  gap only matters for the handful of admin-client calls that trust `user.id` directly
+  (e.g. `api/account.js`'s `deleteUser`). Returns `{ id, email }` (read straight off the
+  token's own `sub`/`email` claims) or `null` (never a client-sent id) for a missing
+  header, invalid/expired/wrong-audience token, unreachable JWKS, or unconfigured
+  Supabase. `getRoast()`/`getRateLimitStatus()`/
   `getHistory()`/`deleteRoast()`/`deleteAccount()` (`src/lib/openai.js`) attach this
   header whenever the caller has a session (`Roaster.jsx`, `History.jsx`, `Privacy.jsx`
   each pass their own `session?.access_token` down from the outlet context); the server
@@ -967,6 +982,13 @@ Vercel Hobby caps a deployment at 12 serverless functions and counts every non-u
 `vercel.json` sets `maxDuration: 60` for `api/roast.js` only — Instagram scraping (the only remaining
 Apify-scraped type; `linkedin` no longer scrapes) plus the LLM call (Groq in production; see "Model
 selection" above) has to fit inside that window, which is why the Apify poll budget is kept short.
+
+`vercel.json`'s top-level `regions: ["sin1"]` pins every function to Singapore, matching the Supabase
+project's own region (`ap-southeast-1`) — added 2026-09-21 after production measurement showed
+`x-vercel-id` routing the default `iad1` (US East) region against a Mumbai edge PoP, adding several
+hundred ms of pure transit before any Supabase call even started. Hobby allows exactly one region, so
+this is a single fixed choice, not a "closest to each visitor" setup — pick whichever region the
+Supabase project is actually in if that project ever moves.
 
 ### Error tracking
 `api/_lib/sentry.js` wraps `@sentry/node`, gated entirely on `SENTRY_DSN` — `isSentryConfigured()`

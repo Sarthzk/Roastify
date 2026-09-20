@@ -16,6 +16,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "html2canvas": "^1.4.1",
+    "jose": "^6.2.12",
     "openai": "^6.35.0",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.2.5",
