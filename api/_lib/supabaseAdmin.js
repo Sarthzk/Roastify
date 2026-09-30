@@ -5,7 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 // (see CLAUDE.md's "Auth" section for how this is verified). The URL itself is the same
 // value the client uses (VITE_SUPABASE_URL is not a secret), read here without the
 // prefix requirement since this file only ever runs server-side.
-function getSupabaseUrl() {
+// Exported so auth.js can build the JWKS URL for local JWT verification without a second
+// copy of this env var fallback.
+export function getSupabaseUrl() {
   return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 }
 
