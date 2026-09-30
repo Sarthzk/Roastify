@@ -29,3 +29,8 @@ scripts/eval-output/
 *.njsproj
 *.sln
 *.sw?
+
+CLAUDE.md
+GYM_TASKS.md
+WORK_LOG.md
+ROASTIFY_TASKS.md
